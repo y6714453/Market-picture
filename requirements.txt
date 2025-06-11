@@ -2,4 +2,4 @@ yfinance
 edge-tts
 requests
 requests-toolbelt
-inflect
+pip install num2words
