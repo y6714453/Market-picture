@@ -53,13 +53,13 @@ def get_greeting():
 
 def describe_trend(change):
     if change >= 1.5:
-        return "מְזַנֵּק"
+        return "עוֹלֶה בֵּעוֹצְמָה"
     elif change >= 0.5:
         return "עוֹלֶה"
     elif change > 0:
         return "מִטְפֵּס"
     elif change > -0.5:
-        return "יוֹרֵד קַלּוֹת"
+        return "יוֹרֵד בְּקַלּוּת"
     elif change > -1.5:
         return "יוֹרֵד"
     else:
@@ -81,23 +81,37 @@ def get_data(ticker):
     near_high = (abs(current - max_val) / max_val < 0.03 and change >= 0)
     return current, change, rising_today, near_high
 
+# בדיקת האם המסחר פתוח
+
+def is_market_open():
+    now = datetime.datetime.now()
+    hour = now.hour
+    minute = now.minute
+    weekday = now.weekday()
+    if weekday >= 5:
+        return False
+    if 16 <= hour < 23 or (hour == 23 and minute == 0):
+        return True
+    return False
+
 # בניית טקסט תמונת שוק
 
 def build_market_text():
     now = datetime.datetime.now()
     greeting = get_greeting()
-    hour = now.hour % 12 or 12
-    minute = now.strftime('%M')
-    time_text = f"{hour} ו{minute} דַּקּוֹת"
-    lines = [f"הִנֵּה תְּמוּנַת הַשּׁוּק – נְכוֹן לְשָׁעָה {time_text} {greeting}:"]
+    hour = now.hour
+    minute = now.minute
+    hour_display = hour if hour <= 12 else hour - 12
+    time_text = f"{hour_display} ו{minute} דַּקּוֹת"
+    lines = [f"הִנֵּה תְּמוּנַת הַשּׁוּק נָכוֹן לְשָׁעָה {time_text} {greeting}:"]
 
     indices = {
-        "מַדַּד תֵּל אָבִיב שְׁלוֹשִׁים וְחָמֵשׁ": "^TA35.TA",
-        "מַדַּד תֵּל אָבִיב מֵאָה וְעֶשְׂרִים וְחָמֵשׁ": "^TA125.TA",
-        "מַדַּד הָאַס אַנְד פִּי חֲמֵשׁ מֵאוֹת": "^GSPC",
-        "הַנָּאסְדָּ"ק": "^IXIC",
-        "דַּאוּ גּ'וֹנְס": "^DJI",
-        "מַדַּד הַפַּחַד": "^VIX",
+        "מָדַד תֵּל אָבִיב 35": "^TA35.TA",
+        "מָדַד תֵּל אָבִיב 125": "^TA125.TA",
+        "מָדַד הָאָס אֶנְד פִּי 500": "^GSPC",
+        "הַנָּאסְדָּק": "^IXIC",
+        "דָּאוֹ גּ'וֹנְס": "^DJI",
+        "מָדַד הַפַּחַד": "^VIX",
         "הַזָּהָב": "GC=F"
     }
 
@@ -107,32 +121,45 @@ def build_market_text():
             continue
         value, change, rising, near_high = result
         trend = describe_trend(change)
-        near_text = " וּמִתְקָרֵב לַשִּׂיא" if near_high and change >= 0 else ""
+        near_text = " וּמִתְקָרֵב לַשִּׂיא" if near_high and rising else ""
         if name == "הַזָּהָב":
-            lines.append(f"{name} {trend} וְנִסְחָר בְּמְחִיר שֶׁל {value:.0f} דּוֹלָר לְאוּנְקִיָּה.")
+            lines.append(f"{name} {trend} וְנִסְחָר בְּמְחִיר שֶׁל {value:.0f} דּוֹלָר לָאוּנְקִיָּה.")
         else:
-            lines.append(f"{name} {trend} בְּ{abs(change):.2f} אָחוּזִים{near_text}, וְעוֹמֵד עַכְשָׁו עַל {value:.0f} נְקֻדּוֹת.")
+            lines.append(f"{name} {trend} בְּ{abs(change):.2f} אָחוּז{near_text} וְעוֹמֵד עַל {value:.0f} נְקֻדּוֹת.")
 
-    # מניות בולטות
+    # מניות וול סטריט
     stocks = {
-        "אַפֵּל": "AAPL",
-        "אַנְבִּידִיָּה": "NVDA",
+        "אַפֶּל": "AAPL",
+        "אֵנְבִידְיָה": "NVDA",
         "אַמָּזוֹן": "AMZN",
         "טֶסְלָה": "TSLA",
         "מַיְקְרוֹסוֹפְט": "MSFT",
-        "גוּגְל": "GOOG"
+        "גוּגֵל": "GOOG"
     }
-    lines.append("עוֹד עַל מַנְיוֹת בּוֹלְטוֹת:")
-    for name, ticker in stocks.items():
-        result = get_data(ticker)
+    changes = []
+    for name, symbol in stocks.items():
+        result = get_data(symbol)
         if not result:
             continue
-        value, change, _, _ = result
-        trend = describe_trend(change)
-        if abs(change) >= 1:
-            lines.append(f"{name} {trend} בְּ{abs(change):.2f} אָחוּזִים, וְנִסְחֶרֶת עַכְשָׁו בְּשֶׁוְויִי שֶׁל {value:.2f} דּוֹלָר.")
-        else:
-            lines.append(f"{name} {trend} בְּ{abs(change):.2f} אָחוּזִים.")
+        value, change, *_ = result
+        changes.append((name, value, change))
+
+    if changes:
+        rising = [c for c in changes if c[2] > 0]
+        falling = [c for c in changes if c[2] < 0]
+        majority = "עוֹלוֹת" if len(rising) > len(falling) else "יוֹרְדוֹת"
+        trend_general = "נִרְשְׁמוּ עָלִיּוֹת חַדּוֹת" if sum(c[2] for c in changes)/len(changes) > 1 else f"נִרְשְׁמוּ {majority}"
+        lines.append(f"בְּווֹל סְטְרִיט {trend_general}:")
+        group = rising if majority == "עוֹלוֹת" else falling
+        for name, value, change in group:
+            line = f"{name} {'עוֹלָה' if change > 0 else 'יוֹרֶדֶת'} בְּ{abs(change):.2f}%"
+            if abs(change) > 1:
+                line += f" וְנִסְחֶרֶת כָּעֵת בֵּשוֹבִי שֶׁל {value:.0f} דּוֹלָר"
+            lines.append(line + ".")
+        other_group = falling if majority == "עוֹלוֹת" else rising
+        if other_group:
+            name, value, change = other_group[0]
+            lines.append(f"וְכָל זֹאת בְּעוֹד {name} {'עוֹלָה' if change > 0 else 'יוֹרֶדֶת'} בְּ{abs(change):.2f}%.")
 
     # קריפטו
     btc = get_data("BTC-USD")
@@ -142,16 +169,16 @@ def build_market_text():
         _, eth_change, _, _ = eth
         avg_change = (btc_change + eth_change) / 2
         crypto_trend = describe_trend(avg_change)
-        lines.append(f"בִּגְזֶרֶת הַקְּרִיפְּטוֹ – נִרְשָׁמוֹת {crypto_trend}:")
-        lines.append(f"הַבִּיטְקוֹיְן נִסְחָר בִּשְׁעַר שֶׁל {btc[0]:,.0f} דּוֹלָר.")
-        lines.append(f"הָאֵתֶ'רְיוּם נִסְחָר בִּשְׁעַר שֶׁל {eth[0]:,.0f} דּוֹלָר.")
+        lines.append(f"בְּגִזְרַת הַקְּרִיפְּטוֹ נִרְשָׁמוֹת {crypto_trend}:")
+        lines.append(f"הַבִּיטְקוֹיְן נִסְחָר בְּשַׁעַר שֶׁל {btc[0]:,.0f} דּוֹלָר.")
+        lines.append(f"הָאֶתֶ'רְיוּם נִסְחָר בְּשַׁעַר שֶׁל {eth[0]:,.0f} דּוֹלָר.")
 
     # דולר
     usd = get_data("USDILS=X")
     if usd:
         curr, change, _, _ = usd
         trend = "מִתְחַזֵּק" if change > 0 else "נֶחְלָשׁ" if change < 0 else "שׁוֹמֵר עַל יַצִּיבוּת"
-        lines.append(f"הַדּוֹלָר {trend} מוּל הַשֶּׁקֶל וְנִסְחָר בִּשְׁעַר שֶׁל {curr:.2f} שֶׁקֶל.")
+        lines.append(f"הַדּוֹלָר {trend} מוּל הַשֶּׁקֶל וְנִסְחָר בְּשַׁעַר שֶׁל {curr:.2f} שְׁקָלִים.")
 
     return "\n".join(lines)
 
@@ -191,7 +218,7 @@ async def loop():
         await text_to_mp3(text, "market.mp3")
         convert_to_wav("market.mp3", "market.wav")
         upload_to_yemot("market.wav")
-        print("✅ הסתיים! מְחַכֶּה לַדַּקָּה הַבָּאָה...\n")
+        print("✅ הסתיים! ממתין לדקה הבאה...\n")
         time.sleep(60)
 
 asyncio.run(loop())
