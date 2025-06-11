@@ -11,9 +11,9 @@ from requests_toolbelt.multipart.encoder import MultipartEncoder
 USERNAME = "0733181201"
 PASSWORD = "6714453"
 TOKEN = f"{USERNAME}:{PASSWORD}"
-UPLOAD_PATH = "ivr2:/2/001.wav"  # שלוחה 2 בתפריט הראשי
+UPLOAD_PATH = "ivr2:/2/001.wav"  # ← שלוחה 2 בתפריט הראשי
 
-# 🤠 ברכה לפי שעה
+# 🧠 ברכה לפי שעה
 def get_greeting():
     hour = datetime.datetime.now().hour
     if 5 <= hour < 12:
@@ -25,7 +25,7 @@ def get_greeting():
     else:
         return "לילה טוב"
 
-# 🤠 תרגום שינוי אחוזי למילים
+# 🧠 תרגום שינוי אחוזי למילים
 def format_trend(change):
     if change >= 1.5:
         return "זינק"
@@ -40,68 +40,77 @@ def format_trend(change):
     else:
         return "צנח"
 
-# 🤠 שליפת נתוני מדד
+# 🧠 שליפת נתוני מדד
 def get_index_info(ticker):
     index = yf.Ticker(ticker)
     data = index.history(period="2d")
     if len(data) < 2:
         return None, None, None
-    prev_close = data['Close'][-2]
-    current = data['Close'][-1]
+    prev_close = data['Close'].iloc[-2]
+    current = data['Close'].iloc[-1]
     change = ((current - prev_close) / prev_close) * 100
     return current, change, format_trend(change)
 
-# 🤠 בניית טקסט תמונת השוק
+# 🧠 בניית טקסט תמונת השוק
 def build_market_text():
     greeting = get_greeting()
     now = datetime.datetime.now().strftime("%H:%M")
 
     indices = {
         "ת״א 125": "^TA125.TA",
-        "ת״א 35": "^TA35.TA",
+        "ת״א 35": "TA35.TA",
         "S&P 500": "^GSPC",
         "נאסד״ק": "^IXIC",
         "דאו ג׳ונס": "^DJI"
     }
 
-    lines = [f"{greeting}! הנה תמונת השוק נכון לשעה {now}:"]
+    lines = [f"{greeting}! הנה תמונת השוק נכון לשעה {now}:\n"]
 
     for name, ticker in indices.items():
         value, change, trend = get_index_info(ticker)
         if value is not None:
-            lines.append(f"מדד {name} {trend} בּ‏{abs(change):.2f} אחוזים, ועומד על {value:.0f} נקודות.")
+            lines.append(f"מדד {name} {trend} ב־{abs(change):.2f} אחוזים, ועומד על {value:.0f} נקודות.")
         else:
-            lines.append(f"לא ניתן למשוך נתונים עבור {name}.")
+            lines.append(f"לא ניתן למשוך נתונים עבור מדד {name}.")
 
     return "\n".join(lines)
 
-# 🎙️ טקסט לַMP3 עם edge-tts
+# 🎙️ טקסט ל־MP3 עם edge-tts
 async def text_to_mp3(text, mp3_path):
+    print("🔄 ממיר טקסט ל־MP3...")
     communicate = Communicate(text, voice="he-IL-AvriNeural")
     await communicate.save(mp3_path)
+    print("✅ נוצר קובץ MP3:", mp3_path)
 
-# 🎹 המרת MP3 ל-WAV
+# 🎚️ המרת MP3 ל־WAV
 def convert_to_wav(mp3_path, wav_path):
+    print("🎛️ ממיר ל-WAV בפורמט ימות...")
     subprocess.run([
         "ffmpeg", "-y", "-i", mp3_path,
         "-ar", "8000", "-ac", "1", "-acodec", "pcm_s16le", wav_path
     ])
+    print("✅ נוצר קובץ WAV:", wav_path)
 
 # ☁️ העלאה לימות המשיח
 def upload_to_yemot(wav_path):
-    m = MultipartEncoder(fields={
-        'token': TOKEN,
-        'path': UPLOAD_PATH,
-        'file': ('001.wav', open(wav_path, 'rb'), 'audio/wav')
-    })
-    response = requests.post("https://www.call2all.co.il/ym/api/UploadFile", data=m, headers={'Content-Type': m.content_type})
-    print("⬆️ העלאה ליקון ימות:", response.text)
+    print("☁️ מעלה את הקובץ לימות המשיח...")
+    try:
+        m = MultipartEncoder(fields={
+            'token': TOKEN,
+            'path': UPLOAD_PATH,
+            'file': ('001.wav', open(wav_path, 'rb'), 'audio/wav')
+        })
+        response = requests.post("https://www.call2all.co.il/ym/api/UploadFile", data=m, headers={'Content-Type': m.content_type})
+        print("📡 תגובת השרת:", response.text)
+    except Exception as e:
+        print("❌ שגיאה בהעלאה:", str(e))
 
 # 🔁 לולאה כל דקה
 async def loop():
     while True:
         print("🎤 מייצר תמונת שוק...")
         text = build_market_text()
+        print("📄 טקסט תמונת שוק:\n", text)
         await text_to_mp3(text, "market.mp3")
         convert_to_wav("market.mp3", "market.wav")
         upload_to_yemot("market.wav")
