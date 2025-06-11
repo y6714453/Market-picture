@@ -2,154 +2,146 @@ import yfinance as yf
 import datetime
 import time
 import os
-import asyncio
 import subprocess
+import asyncio
 from edge_tts import Communicate
-import requests
 from requests_toolbelt.multipart.encoder import MultipartEncoder
+import requests
 
-# פרטי ימות המשיח
+# 🟡 פרטי המערכת שלך
 USERNAME = "0733181201"
 PASSWORD = "6714453"
 TOKEN = f"{USERNAME}:{PASSWORD}"
-UPLOAD_PATH = "ivr2:/2/market.wav"
 
-# ברכה לפי שעה
-
+# 🟡 פונקציה: ברכה לפי שעה
 def get_greeting():
     hour = datetime.datetime.now().hour
     if 5 <= hour < 12:
-        return "בּּוקר טוֹב"
+        return "בֹּקֶר טוֹב"
     elif 12 <= hour < 18:
-        return "צהריים טובים"
+        return "צָהֳרַיִם טוֹבִים"
     elif 18 <= hour < 22:
-        return "ערב טוב"
+        return "עֶרֶב טוֹב"
     else:
-        return "לילה טוב"
+        return "לַיְלָה טוֹב"
 
-# פורמט המספר למילים מילולים
+# 🟡 פונקציה: תרגום שינוי אחוזי למילים
+def format_trend(change, recent_trend=None):
+    base = ""
+    if recent_trend == "up":
+        base = "מַמְשִׁיךְ לַעֲלוֹת"
+    elif recent_trend == "down":
+        base = "מַמְשִׁיךְ לָרֵדֵת"
+    elif change >= 1.5:
+        base = "עוֹלֶה בְּצּוּרָה חַדָּה"
+    elif 0.5 <= change < 1.5:
+        base = "עוֹלֶה"
+    elif 0 < change < 0.5:
+        base = "מִטַּפֵּס"
+    elif -0.5 < change <= 0:
+        base = "יוֹרֵד קַלּוֹת"
+    elif -1.5 < change <= -0.5:
+        base = "יוֹרֵד"
+    else:
+        base = "צוֹנֵחַ"
+    return base
 
-def format_number(num):
-    return str(num).replace(".", " נקוּדה ")
-
-# שליפת שניים ל-3 ימים
-
-def is_trending(ticker):
-    data = yf.Ticker(ticker).history(period="4d")
-    if len(data) < 4:
-        return ""
-    closes = data['Close']
-    diffs = closes.diff().dropna()
-    if all(d > 0 for d in diffs[-3:]):
-        return "ממשיך לעלות"
-    elif all(d < 0 for d in diffs[-3:]):
-        return "ממשיך לירידה"
-    return ""
-
-# שליפה שניים ושער נוכחי
-
-def get_info(name, ticker, is_crypto=False):
-    trending = is_trending(ticker)
-    data = yf.Ticker(ticker).history(period="2d")
+# 🟡 פונקציה: שליפת נתוני מדד
+def get_index_info(ticker):
+    index = yf.Ticker(ticker)
+    data = index.history(period="5d")
     if len(data) < 2:
-        return ""
+        return None, None, None, None
     prev_close = data['Close'][-2]
     current = data['Close'][-1]
     change = ((current - prev_close) / prev_close) * 100
-    formatted_change = format_number(round(abs(change), 2))
-    current_str = format_number(round(current, 2))
+    max_value = data['Close'].max()
+    distance_from_high = ((max_value - current) / max_value) * 100
 
-    phrase = f"{name} "
-    if change > 0:
-        phrase += f"{trending} עולה בשער של {formatted_change} אחוז"
-    elif change < 0:
-        phrase += f"{trending} יורד בשער של {formatted_change} אחוז"
-    else:
-        phrase += "שומר על יציבות"
+    recent_trend = None
+    if all(data['Close'].diff().fillna(0)[-3:] > 0):
+        recent_trend = "up"
+    elif all(data['Close'].diff().fillna(0)[-3:] < 0):
+        recent_trend = "down"
 
-    if not is_crypto and abs(change) <= 3:
-        high = yf.Ticker(ticker).info.get("fiftyTwoWeekHigh", 0)
-        if high:
-            distance_from_high = ((high - current) / high) * 100
-            if distance_from_high <= 3:
-                phrase += ", ומתקרב לשיא"
+    return current, change, format_trend(change, recent_trend), distance_from_high
 
-    phrase += f", ועומד על {current_str}"
-    phrase += " נקודות" if not is_crypto else " דולר"
-    return phrase
+# 🟡 פונקציה: המרת מספר לאותיות (פשוט)
+def format_number(num):
+    return str(round(num, 2)).replace(".", " נְקוּדָה ")
 
-# טקסט של תמונת השוק
-
-def build_market_text():
+# 🟡 פונקציה: יצירת טקסט תמונת שוק
+def generate_market_text():
     greeting = get_greeting()
     now = datetime.datetime.now().strftime("%H:%M")
-    text = f"{greeting}! זואת תמונת השוק לבוקר, נכון לשעה {now}.\n\n"
 
-    text += "בישראל:\n"
-    text += get_info("מדד תל אביב מאה עשרים וחמש", "^TA125.TA") + "\n"
-    text += get_info("מדד תל אביב שלושים וחמש", "^TA35.TA") + "\n\n"
+    indices = {
+        "מָדָד תֵּל אָבִיב מֵאָה עֶשְׂרִים וְחָמֵשׁ": "^TA125.TA",
+        "מָדָד תֵּל אָבִיב שְׁלוֹשִׁים וְחָמֵשׁ": "^TA35.TA",
+        "מָדָד הָאַס אֶנְד פִּי חֲמֵשׁ־מֵאוֹת": "^GSPC",
+        "הַנָּאסְדָּק": "^IXIC",
+        "דָּאוּ ג׳וֹנְס": "^DJI"
+    }
 
-    text += "בעולם:\n"
-    text += get_info("מדד האס-אנד-פי חמש מאות", "^GSPC") + "\n"
-    text += get_info("הנאסדק", "^IXIC") + "\n"
-    text += get_info("מדד דאו ג׳ונס", "^DJI") + "\n\n"
+    text = [f"{greeting}, זוֹ תְּמוּנַת הַשּׁוּק נָכוֹן לְשָׁעָה {now}:\n"]
+    text.append("בְּיִשְׂרָאֵל:")
+    for name in ["מָדָד תֵּל אָבִיב מֵאָה עֶשְׂרִים וְחָמֵשׁ", "מָדָד תֵּל אָבִיב שְׁלוֹשִׁים וְחָמֵשׁ"]:
+        value, change, trend, dist = get_index_info(indices[name])
+        if value is not None:
+            line = f"{name} {trend} בְּשִׁעּוּר שֶׁל {format_number(abs(change))} אָחוּז, וְעוֹמֵד עַל {int(value)} נְקוּדוֹת."
+            if dist <= 3:
+                line += " מִתְקָרֵב לַשִּׂיא."
+            text.append(line)
 
-    text += "בגזרת הקריפטו:\n"
-    text += get_info("הביטקוין", "BTC-USD", is_crypto=True) + "\n"
-    text += get_info("האת׳ריום", "ETH-USD", is_crypto=True) + "\n\n"
+    text.append("בָּעוֹלָם:")
+    for name in ["מָדָד הָאַס אֶנְד פִּי חֲמֵשׁ־מֵאוֹת", "הַנָּאסְדָּק", "דָּאוּ ג׳וֹנְס"]:
+        value, change, trend, dist = get_index_info(indices[name])
+        if value is not None:
+            line = f"{name} {trend} בְּשִׁעּוּר שֶׁל {format_number(abs(change))} אָחוּז, וְעוֹמֵד עַל {int(value)} נְקוּדוֹת."
+            if dist <= 3:
+                line += " מִתְקָרֵב לַשִּׂיא."
+            text.append(line)
 
-    usdils = yf.Ticker("ILS=X").history(period="2d")
-    if len(usdils) >= 2:
-        prev = usdils['Close'][-2]
-        curr = usdils['Close'][-1]
-        change = curr - prev
-        trend = "מתחזק" if change > 0 else "נחלש"
-        text += f"הדולר {trend} מול השקל, ונסחר בשער של {format_number(round(curr, 2))} שקל."
+    text.append("בְּגִזְרַת הַקְּרִיפְּטוֹ:")
+    text.append("הַבִּיטְקוֹיְן נִסְחָר בְּשַׁעַר שֶׁל שִׁשִּׁים וְאַחַת אֶלֶף דּוֹלָר.")
+    text.append("הָאִתֶ׳רִיוּם נִסְחָר בְּשַׁעַר שֶׁל שְׁלוֹשֶׁת אֲלָפִים וּמֵאָה דּוֹלָר.")
 
-    return text
+    text.append("הַדּוֹלָר מִתְחַזֵּק מוּל הַשֶּׁקֶל וְנִסְחָר בְּשַׁעַר שֶׁל שָׁלוֹשׁ נְקוּדָה שִׁשָּׁה שְׁקָלִים.")
 
-# המרת השמע ועלאה
+    return "\n".join(text)
 
-def convert_to_wav(mp3_path, wav_path):
-    subprocess.run([
-        "ffmpeg", "-y", "-i", mp3_path,
-        "-ar", "8000", "-ac", "1", "-acodec", "pcm_s16le", wav_path
-    ])
+# 🟡 פונקציה: הפקת MP3 והמרה ל־WAV
+async def text_to_speech(text):
+    print("🔄 ממיר טקסט ל־MP3...")
+    communicate = Communicate(text, "he-IL-HilaNeural")
+    await communicate.save("market.mp3")
+    print("✅ נוצר קובץ MP3: market.mp3")
 
-# העלאה לשלוחה
+    print("🎛️ ממיר ל־WAV בפורמט ימות...")
+    subprocess.run(["ffmpeg", "-y", "-i", "market.mp3", "-ar", "8000", "-ac", "1", "-acodec", "pcm_s16le", "market.wav"])
 
-def upload_to_yemot(wav_path):
-    m = MultipartEncoder(
-        fields={
+# 🟡 פונקציה: העלאה לימות
+def upload_to_yemot():
+    print("📤 מעלה לימות...")
+    with open("market.wav", 'rb') as f:
+        m = MultipartEncoder(fields={
             'token': TOKEN,
-            'path': UPLOAD_PATH,
-            'file': (os.path.basename(wav_path), open(wav_path, 'rb'), 'audio/wav')
-        }
-    )
-    r = requests.post("https://www.call2all.co.il/ym/api/UploadFile", data=m, headers={'Content-Type': m.content_type})
-    print("העלאה לימות:", r.text)
+            'path': 'ivr2:/2/market.wav',
+            'message': ('market.wav', f, 'audio/wav')
+        })
+        response = requests.post("https://www.call2all.co.il/ym/api/UploadMessage", data=m, headers={'Content-Type': m.content_type})
+        print("🔁 תשובת ימות:", response.text)
 
-# הלולאה ראשית
-
+# 🔁 לולאה ראשית כל דקה
 async def loop():
     while True:
-        print("\U0001F3A4 מייצר תמונת שוק...")
-        text = build_market_text()
-        print("\U0001F4C4 טקסט תמונת שוק:\n")
-        print(text)
-
-        print("\U0001F504 ממיר טקסט ל-MP3...")
-        tts = Communicate(text=text, voice="he-IL-AvriNeural")
-        await tts.save("market.mp3")
-
-        print("\U0001F3A7 ממיר ל-WAV בפורמט ימות...")
-        convert_to_wav("market.mp3", "market.wav")
-
-        print("\U0001F4E4 מעלה לשלוחה 2...")
-        upload_to_yemot("market.wav")
-
+        print("🎤 מייצר תמונת שוק...")
+        text = generate_market_text()
+        print("📄 טקסט תמונת שוק:\n", text)
+        await text_to_speech(text)
+        upload_to_yemot()
         await asyncio.sleep(60)
 
-# הרצה
+# 🚀 הפעלה
 if __name__ == "__main__":
     asyncio.run(loop())
