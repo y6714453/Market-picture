@@ -1,5 +1,5 @@
 yfinance
-edge-tts
 requests
+edge-tts
 requests-toolbelt
-pip install num2words
+num2words
