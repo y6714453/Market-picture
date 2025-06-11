@@ -1,42 +1,25 @@
 import yfinance as yf
 import datetime
 import time
-import subprocess
+import os
 import asyncio
+import subprocess
 from edge_tts import Communicate
 import requests
 from requests_toolbelt.multipart.encoder import MultipartEncoder
-import os
-import urllib.request
-import stat
 
-# 🟡 פרטי ימות המשיח
+# פרטי ימות המשיח
 USERNAME = "0733181201"
 PASSWORD = "6714453"
 TOKEN = f"{USERNAME}:{PASSWORD}"
-UPLOAD_PATH = "ivr2:/2/001.wav"
-FFMPEG_PATH = "./bin/ffmpeg"
+UPLOAD_PATH = "ivr2:/2/market.wav"
 
-# ⬇️ הורדת ffmpeg אם לא קיים
-def ensure_ffmpeg():
-    if not os.path.exists(FFMPEG_PATH):
-        print("⬇️ מוריד ffmpeg...")
-        os.makedirs("bin", exist_ok=True)
-        url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
-        archive_path = "bin/ffmpeg.tar.xz"
-        urllib.request.urlretrieve(url, archive_path)
-        subprocess.run(["tar", "-xf", archive_path, "-C", "bin"])
-        folder = next(f for f in os.listdir("bin") if f.startswith("ffmpeg") and os.path.isdir(os.path.join("bin", f)))
-        full_path = os.path.join("bin", folder, "ffmpeg")
-        os.rename(full_path, FFMPEG_PATH)
-        os.chmod(FFMPEG_PATH, stat.S_IRWXU)
-        print("✅ ffmpeg הותקן.")
+# ברכה לפי שעה
 
-# 🧠 ברכה לפי שעה
 def get_greeting():
     hour = datetime.datetime.now().hour
     if 5 <= hour < 12:
-        return "בוקר טוב"
+        return "בּּוקר טוֹב"
     elif 12 <= hour < 18:
         return "צהריים טובים"
     elif 18 <= hour < 22:
@@ -44,108 +27,129 @@ def get_greeting():
     else:
         return "לילה טוב"
 
-# 🧠 תרגום שינוי אחוזי למילים
-def format_trend(change):
-    if change >= 1.5:
-        return "זינק"
-    elif 0.5 <= change < 1.5:
-        return "עלה"
-    elif 0 < change < 0.5:
-        return "טיפס"
-    elif -0.5 < change <= 0:
-        return "ירד קלות"
-    elif -1.5 < change <= -0.5:
-        return "ירד"
-    else:
-        return "צנח"
+# פורמט המספר למילים מילולים
 
-# 🧠 שליפת נתוני מדד
-def get_index_info(ticker):
-    index = yf.Ticker(ticker)
-    data = index.history(period="2d")
+def format_number(num):
+    return str(num).replace(".", " נקוּדה ")
+
+# שליפת שניים ל-3 ימים
+
+def is_trending(ticker):
+    data = yf.Ticker(ticker).history(period="4d")
+    if len(data) < 4:
+        return ""
+    closes = data['Close']
+    diffs = closes.diff().dropna()
+    if all(d > 0 for d in diffs[-3:]):
+        return "ממשיך לעלות"
+    elif all(d < 0 for d in diffs[-3:]):
+        return "ממשיך לירידה"
+    return ""
+
+# שליפה שניים ושער נוכחי
+
+def get_info(name, ticker, is_crypto=False):
+    trending = is_trending(ticker)
+    data = yf.Ticker(ticker).history(period="2d")
     if len(data) < 2:
-        return None, None, None
-    prev_close = data['Close'].iloc[-2]
-    current = data['Close'].iloc[-1]
+        return ""
+    prev_close = data['Close'][-2]
+    current = data['Close'][-1]
     change = ((current - prev_close) / prev_close) * 100
-    return current, change, format_trend(change)
+    formatted_change = format_number(round(abs(change), 2))
+    current_str = format_number(round(current, 2))
 
-# 🧠 בניית טקסט תמונת השוק
+    phrase = f"{name} "
+    if change > 0:
+        phrase += f"{trending} עולה בשער של {formatted_change} אחוז"
+    elif change < 0:
+        phrase += f"{trending} יורד בשער של {formatted_change} אחוז"
+    else:
+        phrase += "שומר על יציבות"
+
+    if not is_crypto and abs(change) <= 3:
+        high = yf.Ticker(ticker).info.get("fiftyTwoWeekHigh", 0)
+        if high:
+            distance_from_high = ((high - current) / high) * 100
+            if distance_from_high <= 3:
+                phrase += ", ומתקרב לשיא"
+
+    phrase += f", ועומד על {current_str}"
+    phrase += " נקודות" if not is_crypto else " דולר"
+    return phrase
+
+# טקסט של תמונת השוק
+
 def build_market_text():
     greeting = get_greeting()
     now = datetime.datetime.now().strftime("%H:%M")
+    text = f"{greeting}! זואת תמונת השוק לבוקר, נכון לשעה {now}.\n\n"
 
-    indices = {
-        "ת״א 125": "^TA125.TA",
-        "ת״א 35": "TA35.TA",
-        "S&P 500": "^GSPC",
-        "נאסד״ק": "^IXIC",
-        "דאו ג׳ונס": "^DJI"
-    }
+    text += "בישראל:\n"
+    text += get_info("מדד תל אביב מאה עשרים וחמש", "^TA125.TA") + "\n"
+    text += get_info("מדד תל אביב שלושים וחמש", "^TA35.TA") + "\n\n"
 
-    lines = [f"{greeting}! הנה תמונת השוק נכון לשעה {now}:"]
+    text += "בעולם:\n"
+    text += get_info("מדד האס-אנד-פי חמש מאות", "^GSPC") + "\n"
+    text += get_info("הנאסדק", "^IXIC") + "\n"
+    text += get_info("מדד דאו ג׳ונס", "^DJI") + "\n\n"
 
-    for name, ticker in indices.items():
-        value, change, trend = get_index_info(ticker)
-        if value is not None:
-            lines.append(f"מדד {name} {trend} ב־{abs(change):.2f} אחוזים, ועומד על {value:.0f} נקודות.")
-        else:
-            lines.append(f"לא ניתן למשוך נתונים עבור מדד {name}.")
+    text += "בגזרת הקריפטו:\n"
+    text += get_info("הביטקוין", "BTC-USD", is_crypto=True) + "\n"
+    text += get_info("האת׳ריום", "ETH-USD", is_crypto=True) + "\n\n"
 
-    # ✴️ עדכון על הדולר
-    usd_ils = yf.Ticker("USDILS=X")
-    data = usd_ils.history(period="2d")
-    if len(data) >= 2:
-        prev = data['Close'].iloc[-2]
-        curr = data['Close'].iloc[-1]
-        diff = curr - prev
-        trend = "מתחזק" if diff > 0 else "נחלש" if diff < 0 else "שומר על יציבות"
-        lines.append(f"בגזרת המטבעות – הדולר {trend} מול השקל ונסחר בשער של {curr:.2f} שקלים.")
+    usdils = yf.Ticker("ILS=X").history(period="2d")
+    if len(usdils) >= 2:
+        prev = usdils['Close'][-2]
+        curr = usdils['Close'][-1]
+        change = curr - prev
+        trend = "מתחזק" if change > 0 else "נחלש"
+        text += f"הדולר {trend} מול השקל, ונסחר בשער של {format_number(round(curr, 2))} שקל."
 
-    return "\n".join(lines)
+    return text
 
-# 🎙️ טקסט ל־MP3 עם edge-tts
-async def text_to_mp3(text, mp3_path):
-    print("🔄 ממיר טקסט ל־MP3...")
-    communicate = Communicate(text, voice="he-IL-AvriNeural")
-    await communicate.save(mp3_path)
-    print("✅ נוצר קובץ MP3:", mp3_path)
+# המרת השמע ועלאה
 
-# 🎚️ המרת MP3 ל־WAV
 def convert_to_wav(mp3_path, wav_path):
-    print("🎛️ ממיר ל-WAV בפורמט ימות...")
     subprocess.run([
-        FFMPEG_PATH, "-y", "-i", mp3_path,
+        "ffmpeg", "-y", "-i", mp3_path,
         "-ar", "8000", "-ac", "1", "-acodec", "pcm_s16le", wav_path
     ])
-    print("✅ נוצר קובץ WAV:", wav_path)
 
-# ☁️ העלאה לימות המשיח
+# העלאה לשלוחה
+
 def upload_to_yemot(wav_path):
-    print("☁️ מעלה את הקובץ לימות המשיח...")
-    try:
-        m = MultipartEncoder(fields={
+    m = MultipartEncoder(
+        fields={
             'token': TOKEN,
             'path': UPLOAD_PATH,
-            'file': ('001.wav', open(wav_path, 'rb'), 'audio/wav')
-        })
-        response = requests.post("https://www.call2all.co.il/ym/api/UploadFile", data=m, headers={'Content-Type': m.content_type})
-        print("📡 תגובת השרת:", response.text)
-    except Exception as e:
-        print("❌ שגיאה בהעלאה:", str(e))
+            'file': (os.path.basename(wav_path), open(wav_path, 'rb'), 'audio/wav')
+        }
+    )
+    r = requests.post("https://www.call2all.co.il/ym/api/UploadFile", data=m, headers={'Content-Type': m.content_type})
+    print("העלאה לימות:", r.text)
 
-# 🔁 לולאה כל דקה
+# הלולאה ראשית
+
 async def loop():
-    ensure_ffmpeg()
     while True:
-        print("🎤 מייצר תמונת שוק...")
+        print("\U0001F3A4 מייצר תמונת שוק...")
         text = build_market_text()
-        print("📄 טקסט תמונת שוק:\n", text)
-        await text_to_mp3(text, "market.mp3")
-        convert_to_wav("market.mp3", "market.wav")
-        upload_to_yemot("market.wav")
-        print("✅ הסתיים! מחכה לדקה הבאה...\n")
-        time.sleep(60)
+        print("\U0001F4C4 טקסט תמונת שוק:\n")
+        print(text)
 
-# ▶️ הרצת הלולאה
-asyncio.run(loop())
+        print("\U0001F504 ממיר טקסט ל-MP3...")
+        tts = Communicate(text=text, voice="he-IL-AvriNeural")
+        await tts.save("market.mp3")
+
+        print("\U0001F3A7 ממיר ל-WAV בפורמט ימות...")
+        convert_to_wav("market.mp3", "market.wav")
+
+        print("\U0001F4E4 מעלה לשלוחה 2...")
+        upload_to_yemot("market.wav")
+
+        await asyncio.sleep(60)
+
+# הרצה
+if __name__ == "__main__":
+    asyncio.run(loop())
