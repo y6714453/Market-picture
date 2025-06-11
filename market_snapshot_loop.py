@@ -6,15 +6,31 @@ import asyncio
 from edge_tts import Communicate
 import requests
 from requests_toolbelt.multipart.encoder import MultipartEncoder
+import os
+import urllib.request
+import stat
 
 # 🟡 פרטי ימות המשיח
 USERNAME = "0733181201"
 PASSWORD = "6714453"
 TOKEN = f"{USERNAME}:{PASSWORD}"
-UPLOAD_PATH = "ivr2:/2/001.wav"  # ← שלוחה 2 בתפריט הראשי
-
-# 🔧 נתיב ל־ffmpeg בתיקיית bin
+UPLOAD_PATH = "ivr2:/2/001.wav"
 FFMPEG_PATH = "./bin/ffmpeg"
+
+# ⬇️ הורדת ffmpeg אם לא קיים
+def ensure_ffmpeg():
+    if not os.path.exists(FFMPEG_PATH):
+        print("⬇️ מוריד ffmpeg...")
+        os.makedirs("bin", exist_ok=True)
+        url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+        archive_path = "bin/ffmpeg.tar.xz"
+        urllib.request.urlretrieve(url, archive_path)
+        subprocess.run(["tar", "-xf", archive_path, "-C", "bin"])
+        folder = next(f for f in os.listdir("bin") if f.startswith("ffmpeg") and os.path.isdir(os.path.join("bin", f)))
+        full_path = os.path.join("bin", folder, "ffmpeg")
+        os.rename(full_path, FFMPEG_PATH)
+        os.chmod(FFMPEG_PATH, stat.S_IRWXU)
+        print("✅ ffmpeg הותקן.")
 
 # 🧠 ברכה לפי שעה
 def get_greeting():
@@ -76,7 +92,7 @@ def build_market_text():
         else:
             lines.append(f"לא ניתן למשוך נתונים עבור מדד {name}.")
 
-    # ✴️ תוספת – מידע על הדולר מול השקל
+    # ✴️ עדכון על הדולר
     usd_ils = yf.Ticker("USDILS=X")
     data = usd_ils.history(period="2d")
     if len(data) >= 2:
@@ -120,6 +136,7 @@ def upload_to_yemot(wav_path):
 
 # 🔁 לולאה כל דקה
 async def loop():
+    ensure_ffmpeg()
     while True:
         print("🎤 מייצר תמונת שוק...")
         text = build_market_text()
