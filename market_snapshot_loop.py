@@ -32,38 +32,54 @@ def ensure_ffmpeg():
         os.chmod(FFMPEG_PATH, stat.S_IRWXU)
         print("✅ ffmpeg הותקן.")
 
-# קבלת ברכה ושעת היום בעברית
+# קבלת שעת ישראל לפי API
 
-def get_greeting():
-    hour = datetime.datetime.now().hour
-    if 6 <= hour < 10:
-        return "בבוקר"
-    elif 10 <= hour < 12:
-        return "לפני הצהריים"
-    elif 12 <= hour < 14:
-        return "בצהריים"
-    elif 14 <= hour < 18:
-        return "אחר הצהריים"
-    elif 18 <= hour < 22:
-        return "בערב"
+def get_current_israel_time():
+    try:
+        response = requests.get("https://worldtimeapi.org/api/timezone/Asia/Jerusalem", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            dt_str = data["datetime"]
+            dt = datetime.datetime.fromisoformat(dt_str[:-6])
+            return dt
+    except Exception as e:
+        print("⚠️ שגיאה בשליפת זמן מישראל:", e)
+
+    # fallback
+    return datetime.datetime.now()
+
+# המרת שעה למחרוזת קריאה בעברית
+
+def format_hebrew_time(dt):
+    hour = dt.hour
+    minute = dt.minute
+
+    if hour >= 12:
+        suffix = "בָּעֶרֶב" if hour < 18 else "בַּלַּיְלָה"
     else:
-        return "בלילה"
+        suffix = "בַּבּוֹקֶר"
+
+    hour_display = hour if hour <= 12 else hour - 12
+    hour_text = f"שעה {hour_display}"
+    if minute > 0:
+        hour_text += f" ו{minute} דַּקּוֹת"
+    return f"{hour_text} {suffix}"
 
 # תיאור מגמה לפי אחוז שינוי
 
 def describe_trend(change):
     if change >= 1.5:
-        return "עולה בעוצמה"
+        return "עוֹלֶה בְּעוֹצְמָה"
     elif change >= 0.5:
-        return "מטפס"
+        return "מֵטָפֵּס"
     elif change > 0:
-        return "עולה"
+        return "עוֹלֶה"
     elif change > -0.5:
-        return "יורד בקלות"
+        return "יוֹרֵד קָלוֹת"
     elif change > -1.5:
-        return "יורד"
+        return "יוֹרֵד"
     else:
-        return "צונח"
+        return "צוֹנֵחַ"
 
 # שליפת נתוני נייר ערך
 
@@ -84,25 +100,18 @@ def get_data(ticker):
 # בניית טקסט תמונת שוק
 
 def build_market_text():
-    now = datetime.datetime.now()
-    greeting = get_greeting()
-    hour = now.hour
-    minute = now.minute
-    hour_display = hour if hour <= 12 else hour - 12
-    if minute == 0:
-        time_text = f"{hour_display}"
-    else:
-        time_text = f"{hour_display} ו{minute} דקות"
-    lines = [f"הנה תמונת השוק נכון לשעה {time_text} {greeting}:"]
+    dt = get_current_israel_time()
+    time_text = format_hebrew_time(dt)
+    lines = [f"הִנֵּה תְּמוּנַת הַשּׁוּק נָכוֹן לְ{time_text}:"]
 
     indices = {
-        "מדד תל אביב 35": "^TA35.TA",
-        "מדד תל אביב 125": "^TA125.TA",
-        "מדד האס אנד פי 500": "^GSPC",
-        "הנאסדק": "^IXIC",
-        "דאו ג'ונס": "^DJI",
-        "מדד הפחד": "^VIX",
-        "הזהב": "GC=F"
+        "מָדָד תֵל אָבִיב 125": "^TA125.TA",
+        "מָדָד תֵל אָבִיב 35": "TA35.TA",
+        "מָדָד הָאֵס אֵנְד פִּי 500": "^GSPC",
+        "הַנָאסְדָק": "^IXIC",
+        "הָדָאוֹ ג'וֹנְס": "^DJI",
+        "מָדָד הַפַּחַד": "^VIX",
+        "הָזָהָב": "GC=F"
     }
 
     for name, ticker in indices.items():
@@ -111,21 +120,21 @@ def build_market_text():
             continue
         value, change, rising, near_high = result
         trend = describe_trend(change)
-        near_text = " ומתקרב לשיא" if near_high and rising else ""
-        if name == "הזהב":
-            lines.append(f"{name} {trend} ונסחר במחיר של {value:.0f} דולר לאונקיה.")
+        near_text = " וּמִתְקָרֵב לַשִׁיא" if near_high and rising else ""
+        if name == "הָזָהָב":
+            lines.append(f"{name} {trend} וְנִסְחָר בְּמְחִיר שֶׁל {value:.0f} דוֹלָר לֵאוֹנְקִיָה.")
         else:
-            lines.append(f"{name} {trend} ב־{abs(change):.2f} אחוזים{near_text} ועומד על {value:.0f} נקודות.")
+            lines.append(f"{name} {trend} ב{abs(change):.2f} אָחוּזִים{near_text} וְעוֹמֵד עַל {value:.0f} נֵקוּדוֹת.")
 
     return "\n".join(lines)
 
-# המרת טקסט ל־MP3
+# המרת טקסט לMP3
 
 async def text_to_mp3(text, mp3_path):
     communicate = Communicate(text, voice="he-IL-AvriNeural")
     await communicate.save(mp3_path)
 
-# המרת MP3 ל־WAV
+# המרת MP3 לWAV
 
 def convert_to_wav(mp3_path, wav_path):
     subprocess.run([
@@ -142,20 +151,20 @@ def upload_to_yemot(wav_path):
         'file': ('001.wav', open(wav_path, 'rb'), 'audio/wav')
     })
     r = requests.post("https://www.call2all.co.il/ym/api/UploadFile", data=m, headers={'Content-Type': m.content_type})
-    print("📡 תגובת השרת:", r.text)
+    print("📡 תְּגוּבַת הַשָּׁרָת:", r.text)
 
 # לולאה
 
 async def loop():
     ensure_ffmpeg()
     while True:
-        print("🎤 מייצר תמונת שוק...")
+        print("🎤 מְיַצֵּר תְּמוּנַת שׁוּק...")
         text = build_market_text()
-        print("📄 טקסט תמונת שוק:\n", text)
+        print("📄 טֶקְסְט תְּמוּנַת שׁוּק:\n", text)
         await text_to_mp3(text, "market.mp3")
         convert_to_wav("market.mp3", "market.wav")
         upload_to_yemot("market.wav")
-        print("✅ הסתיים! ממתין לדקה הבאה...\n")
+        print("✅ הִסְתַּיֵּם! מְמַתִּין לַדַּקָּה הַבָּאָה...\n")
         time.sleep(60)
 
 asyncio.run(loop())
