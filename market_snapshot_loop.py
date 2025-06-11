@@ -10,14 +10,13 @@ import urllib.request
 import stat
 from datetime import datetime
 from zoneinfo import ZoneInfo
-import inflect
+from num2words import num2words
 
 USERNAME = "0733181201"
 PASSWORD = "6714453"
 TOKEN = f"{USERNAME}:{PASSWORD}"
 UPLOAD_PATH = "ivr2:/2/001.wav"
 FFMPEG_PATH = "./bin/ffmpeg"
-p = inflect.engine()
 
 def ensure_ffmpeg():
     if not os.path.exists(FFMPEG_PATH):
@@ -79,22 +78,22 @@ def get_data(ticker):
     near_high = (abs(current - max_val) / max_val < 0.03 and change >= 0)
     return current, change, rising_today, near_high
 
-def num_to_words(num):
-    return p.number_to_words(int(round(num)), andword="")
+def num_to_words_he(num):
+    return num2words(int(round(num)), lang='he')
 
 def build_market_text():
     hour, minute = get_time_from_israel()
     greeting = get_greeting(hour)
     hour_display = hour if hour <= 12 else hour - 12
-    time_text = f"{hour_display} ו{minute} דַּקּוֹת"
+    time_text = f"{hour_display} ו{minute} דָקוֹת"
     lines = [f"הִנֵּה תְמוּנַת הַשּׁוּק נָכוֹן לְשָׁעָה {time_text} {greeting}:"]
 
     indices = {
-        "מָדַד תֵּל אָבִיב 35": "^TA35.TA",
-        "מָדַד תֵּל אָבִיב 125": "^TA125.TA",
+        "מָדַד תֵל אָבִיב 35": "TA35.TA",
+        "מָדַד תֵל אָבִיב 125": "^TA125.TA",
         "מָדַד הָאֵס אֶנְד פִּי 500": "^GSPC",
         "הַנָאסְדָק": "^IXIC",
-        "דָאוֹ גּ'וֹנְס": "^DJI",
+        "הָדָאוֹ גּ'וֹנְס": "^DJI",
         "מָדַד הַפַּחַד": "^VIX",
         "הַזָּהָב": "GC=F"
     }
@@ -106,7 +105,7 @@ def build_market_text():
         value, change, rising, near_high = result
         trend = describe_trend(change)
         near_text = " וּמִתְקָרֵב לַשִׂיא" if near_high and rising else ""
-        value_words = num_to_words(value)
+        value_words = num_to_words_he(value)
         if name == "הַזָהָב":
             lines.append(f"{name} {trend} וְנִסְחָר בְּמְחִיר שֶׁל {value_words} דוֹלָר לֵאוֹנְקִיָה.")
         else:
@@ -136,7 +135,7 @@ def build_market_text():
         lines.append(f"בְּווֹל סְטְרִיט {trend_general}:")
         group = rising if majority == "עוֹלוֹת" else falling
         for name, value, change in group:
-            value_words = num_to_words(value)
+            value_words = num_to_words_he(value)
             line = f"{name} {'עוֹלָה' if change > 0 else 'יוֹרֶדֶת'} בְּ{abs(change):.2f}%"
             if abs(change) > 1:
                 line += f" וְנִסְחֶרֶת כָּעֵת בֵּשוֹבִי שֶׁל {value_words} דוֹלָר"
@@ -154,14 +153,14 @@ def build_market_text():
         avg_change = (btc_change + eth_change) / 2
         crypto_trend = describe_trend(avg_change)
         lines.append(f"בְּגִזְרַת הַקְּרִיפְּטוֹ נִרְשָׁמוֹת {crypto_trend}:")
-        lines.append(f"הַבִּיטְקוֹיְן נִסְחָר בְּשַׁעַר שֶׁל {num_to_words(btc[0])} דּוֹלָר.")
-        lines.append(f"הָאִתֶ'רְיוּם נִסְחָר בְּשַׁעַר שֶׁל {num_to_words(eth[0])} דּוֹלָר.")
+        lines.append(f"הַבִּיטְקוֹיְן נִסְחָר בְּשַׁעַר שֶׁל {num_to_words_he(btc[0])} דּוֹלָר.")
+        lines.append(f"הָאִתֶ'רְיוּם נִסְחָר בְּשַׁעַר שֶׁל {num_to_words_he(eth[0])} דּוֹלָר.")
 
     usd = get_data("USDILS=X")
     if usd:
         curr, change, _, _ = usd
         trend = "מִתְחַזֵּק" if change > 0 else "נֶחְלָשׁ" if change < 0 else "שׁוֹמֵר עַל יַצִּיבוּת"
-        lines.append(f"הַדוֹלָר {trend} מוּל הַשֵׁקֶל וְנִסְחָר בְּשַׁעַר שֶׁל {num_to_words(curr)} שְׁקָלִים.")
+        lines.append(f"הַדוֹלָר {trend} מוּל הַשֵׁקֶל וְנִסְחָר בְּשַׁעַר שֶׁל {num_to_words_he(curr)} שְׁקָלִים.")
 
     return "\n".join(lines)
 
