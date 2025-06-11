@@ -1,5 +1,4 @@
 import yfinance as yf
-import datetime
 import time
 import subprocess
 import asyncio
@@ -9,6 +8,8 @@ from requests_toolbelt.multipart.encoder import MultipartEncoder
 import os
 import urllib.request
 import stat
+from datetime import datetime
+from zoneinfo import ZoneInfo  # דורש Python 3.9+
 
 USERNAME = "0733181201"
 PASSWORD = "6714453"
@@ -30,17 +31,8 @@ def ensure_ffmpeg():
         os.chmod(FFMPEG_PATH, stat.S_IRWXU)
         print("✅ ffmpeg הותקן.")
 
-def get_time_from_api():
-    try:
-        r = requests.get("https://worldtimeapi.org/api/timezone/Asia/Jerusalem", timeout=5)
-        if r.status_code == 200:
-            dt = r.json()["datetime"]
-            hour = int(dt[11:13])
-            minute = int(dt[14:16])
-            return hour, minute
-    except:
-        pass
-    now = datetime.datetime.now()
+def get_time_from_israel():
+    now = datetime.now(ZoneInfo("Asia/Jerusalem"))
     return now.hour, now.minute
 
 def get_greeting(hour):
@@ -86,7 +78,7 @@ def get_data(ticker):
     return current, change, rising_today, near_high
 
 def build_market_text():
-    hour, minute = get_time_from_api()
+    hour, minute = get_time_from_israel()
     greeting = get_greeting(hour)
     hour_display = hour if hour <= 12 else hour - 12
     time_text = f"{hour_display} ו{minute} דַּקּוֹת"
