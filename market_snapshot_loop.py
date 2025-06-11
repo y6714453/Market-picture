@@ -79,7 +79,13 @@ def get_data(ticker):
     return current, change, rising_today, near_high
 
 def num_to_words_he(num):
-    return num2words(int(round(num)), lang='he')
+    num = round(num, 2)
+    if int(num) == num:
+        return num2words(int(num), lang='he')
+    integer_part, decimal_part = str(num).split('.')
+    integer_words = num2words(int(integer_part), lang='he')
+    decimal_words = ' '.join([num2words(int(d), lang='he') for d in decimal_part])
+    return f"{integer_words} נקודה {decimal_words}"
 
 def build_market_text():
     hour, minute = get_time_from_israel()
