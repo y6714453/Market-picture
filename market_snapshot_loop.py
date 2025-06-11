@@ -18,6 +18,7 @@ UPLOAD_PATH = "ivr2:/2/001.wav"
 FFMPEG_PATH = "./bin/ffmpeg"
 
 # ⬇️ הורדת ffmpeg אם לא קיים
+
 def ensure_ffmpeg():
     if not os.path.exists(FFMPEG_PATH):
         print("⬇️ מוריד ffmpeg...")
@@ -33,6 +34,7 @@ def ensure_ffmpeg():
         print("✅ ffmpeg הותקן.")
 
 # 🧠 ברכה לפי שעה
+
 def get_greeting():
     hour = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=3))).hour
     if 6 <= hour < 12:
@@ -44,37 +46,48 @@ def get_greeting():
     else:
         return "לילה טוב"
 
-# 🧠 שליפת נתוני מדד
+# 🧠 פורמט שינוי אחוזי למילים
+
+def format_trend(change):
+    if change >= 1.5:
+        return "ממשיך לעלות דרמטית"
+    elif 0.5 <= change < 1.5:
+        return "ממשיך לעלות"
+    elif 0 < change < 0.5:
+        return "ממשיך לטפס"
+    elif -0.5 < change <= 0:
+        return "מרד קלות"
+    elif -1.5 < change <= -0.5:
+        return "ממשיך לירידה"
+    else:
+        return "ממשיך לירידה דרמטית"
+
+# 🧠 שליפת נתוני שוק
 
 def get_index_info(ticker):
     index = yf.Ticker(ticker)
-    data = index.history(period="4d")
-    if len(data) < 2:
+    data = index.history(period="5d")
+    if len(data) < 4:
         return None, None, None, None
-    prev_close = data['Close'].iloc[-2]
-    current = data['Close'].iloc[-1]
-    change = ((current - prev_close) / prev_close) * 100
-    recent_changes = [((data['Close'].iloc[i] - data['Close'].iloc[i - 1]) / data['Close'].iloc[i - 1]) * 100 for i in range(-3, 0)]
-    return current, change, recent_changes, prev_close
-
-# 🧠 פרסינג ניסוח לעלייה/ ירידה / דרמטית
-
-def format_trend(change, recent_changes):
-    avg_change = sum(recent_changes) / len(recent_changes)
-    if avg_change > 0.5:
-        return "ממשיך לעלות דרמטית"
-    elif avg_change > 0:
-        return "ממשיך לעלות"
-    elif avg_change < -0.5:
-        return "ממשיך לירידה דרמטית"
-    elif avg_change < 0:
-        return "ממשיך לירידה"
-    elif change > 0:
-        return "עולה"
-    elif change < 0:
-        return "יורד"
+    prev = data['Close'].iloc[-2]
+    curr = data['Close'].iloc[-1]
+    change = ((curr - prev) / prev) * 100
+    last3 = data['Close'].iloc[-3:]
+    trend_past = ""
+    if all(last3[i] < last3[i + 1] for i in range(2)):
+        if change > 1:
+            trend_past = "ממשיך לעלות בצורה גבוה"
+        else:
+            trend_past = "ממשיך לעלות"
+    elif all(last3[i] > last3[i + 1] for i in range(2)):
+        if abs(change) > 1:
+            trend_past = "ממשיך לירידה דרמטית"
+        else:
+            trend_past = "ממשיך לירידה"
     else:
-        return "ללא שינוי"
+        trend_past = format_trend(change)
+    near_high = abs((curr - max(data['Close'])) / max(data['Close'])) < 0.03
+    return curr, change, trend_past, near_high
 
 # 🧠 בניית הטקסט
 
@@ -84,74 +97,81 @@ def build_market_text():
     lines = [f"{greeting}, זוא תמונת השוק נכון לשעה {now}:"]
 
     indices = {
-        "תל אביב 125": "^TA125.TA",
-        "תל אביב 35": "TA35.TA",
+        "מדד תל אביב 125": "^TA125.TA",
         "מדד האס אנד פי 500": "^GSPC",
-        "הנאסדק": "^IXIC",
-        "דאו גונס": "^DJI"
+        "מדד הנאסדק": "^IXIC",
+        "דאו ג'ונס": "^DJI"
     }
 
-    for name, ticker in indices.items():
-        value, change, recent_changes, prev_close = get_index_info(ticker)
-        if value is not None:
-            trend_text = format_trend(change, recent_changes)
-            percent_text = f"{abs(change):.2f}".replace(".", " נקודה ")
-            suffix = "."
-            if abs(change) <= 3 and abs((value - max(data['Close'])) / max(data['Close'])) < 0.03:
-                suffix = " ומתקרב לשיא."
-            lines.append(f"מדד {name} {trend_text} בשער של {percent_text} אחוז, ועומד על {value:.0f} נקודות{suffix}")
+    lines.append("בישראל:")
+    name = "מדד תל אביב 125"
+    value, change, trend, near_high = get_index_info(indices[name])
+    if value:
+        line = f"{name} {trend} בשעור של {abs(change):.2f}‏% ועומד על {value:.0f} נקודות."
+        if near_high:
+            line += " ומתקרב לשיא."
+        lines.append(line)
 
-    usd_ils = yf.Ticker("USDILS=X")
-    data = usd_ils.history(period="2d")
+    lines.append("בעולם:")
+    for name, ticker in list(indices.items())[1:]:
+        value, change, trend, near_high = get_index_info(ticker)
+        if value:
+            line = f"{name} {trend} בשעור של {abs(change):.2f}‏% ועומד על {value:.0f} נקודות."
+            if near_high:
+                line += " ומתקרב לשיא."
+            lines.append(line)
+
+    # ✳️ קריפטו ודולר
+    usd = yf.Ticker("USDILS=X")
+    data = usd.history(period="2d")
     if len(data) >= 2:
-        prev = data['Close'].iloc[-2]
-        curr = data['Close'].iloc[-1]
-        diff = curr - prev
-        trend = "מתחזק" if diff > 0 else "נחלש" if diff < 0 else "שומר על יציבות"
-        rate = str(round(curr, 2)).replace(".", " נקודה ")
-        lines.append(f"הדולר {trend} מול השקל, ונסחר בשער של {rate} שקלים.")
+        prev, curr = data['Close'].iloc[-2], data['Close'].iloc[-1]
+        if curr > prev:
+            trend = "מתחזק"
+        elif curr < prev:
+            trend = "נחלש"
+        else:
+            trend = "שומר על יציבות"
+        lines.append(f"הדולר {trend} מול השקל ונסחר בשער של {curr:.2f} שקלים.")
 
     return "\n".join(lines)
 
-# 🎤 טקסט ל‏MP3
+# 🎤 המרת MP3
+
 async def text_to_mp3(text, mp3_path):
+    print("🔄 ממיר טקסט לקובץ MP3...")
     communicate = Communicate(text, voice="he-IL-AvriNeural")
     await communicate.save(mp3_path)
+    print("✅ נוצר MP3:", mp3_path)
 
-# 🎚️ המרת MP3 ל-WAV
+# ♪ מי MP3 לפורמט WAV
 
 def convert_to_wav(mp3_path, wav_path):
-    subprocess.run([
-        FFMPEG_PATH, "-y", "-i", mp3_path,
-        "-ar", "8000", "-ac", "1", "-acodec", "pcm_s16le", wav_path
-    ])
+    subprocess.run([FFMPEG_PATH, "-y", "-i", mp3_path, "-ar", "8000", "-ac", "1", "-acodec", "pcm_s16le", wav_path])
 
 # ☁️ העלאה לימות
 
 def upload_to_yemot(wav_path):
-    print("⬆️ מעלה לימות...")
-    try:
-        m = MultipartEncoder(fields={
-            'token': TOKEN,
-            'path': UPLOAD_PATH,
-            'file': ('001.wav', open(wav_path, 'rb'), 'audio/wav')
-        })
-        response = requests.post("https://www.call2all.co.il/ym/api/UploadFile", data=m, headers={'Content-Type': m.content_type})
-        print("📡 תגובת השרת:", response.text)
-    except Exception as e:
-        print("❌ שגיאה בהעלאה:", str(e))
+    print("☁️ מעלה לימות...")
+    m = MultipartEncoder(fields={
+        'token': TOKEN,
+        'path': UPLOAD_PATH,
+        'file': ('001.wav', open(wav_path, 'rb'), 'audio/wav')
+    })
+    r = requests.post("https://www.call2all.co.il/ym/api/UploadFile", data=m, headers={'Content-Type': m.content_type})
+    print("📱 תגובת השרת:", r.text)
 
-# 🔁 לולאה כל דקה
+# ▶️ לולאת הפעלה
+
 async def loop():
     ensure_ffmpeg()
     while True:
         print("🎤 מייצר תמונת שוק...")
         text = build_market_text()
-        print("\n📄 טקסט תמונת שוק:\n", text)
+        print("📄 נוסח:", text)
         await text_to_mp3(text, "market.mp3")
         convert_to_wav("market.mp3", "market.wav")
         upload_to_yemot("market.wav")
-        print("\n✅ נשלח! מחכה לדקה הבאה...\n")
         time.sleep(60)
 
 asyncio.run(loop())
