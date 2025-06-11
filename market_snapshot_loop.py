@@ -55,9 +55,9 @@ def describe_trend(change):
     if change >= 1.5:
         return "עוֹלֶה בֵּעוֹצְמָה"
     elif change >= 0.5:
-        return "עוֹלֶה"
+        return "מֵטָפֵס"
     elif change > 0:
-        return "מִטְפֵּס"
+        return "עוֹלֵה"
     elif change > -0.5:
         return "יוֹרֵד בְּקַלּוּת"
     elif change > -1.5:
@@ -121,11 +121,11 @@ def build_market_text():
             continue
         value, change, rising, near_high = result
         trend = describe_trend(change)
-        near_text = " וּמִתְקָרֵב לַשִּׂיא" if near_high and rising else ""
-        if name == "הַזָּהָב":
-            lines.append(f"{name} {trend} וְנִסְחָר בְּמְחִיר שֶׁל {value:.0f} דּוֹלָר לָאוּנְקִיָּה.")
+        near_text = " וּמִתְקָרֵב לַשִׂיא" if near_high and rising else ""
+        if name == "הַזָהָב":
+            lines.append(f"{name} {trend} וְנִסְחָר בְּמְחִיר שֶׁל {value:.0f} דוֹלָר לֵאוֹנְקִיָה.")
         else:
-            lines.append(f"{name} {trend} בְּ{abs(change):.2f} אָחוּז{near_text} וְעוֹמֵד עַל {value:.0f} נְקֻדּוֹת.")
+            lines.append(f"{name} {trend} בְּ{abs(change):.2f} אָחוּז{near_text} וְעוֹמֵד עַל {value:.0f} נְקֻדוֹת.")
 
     # מניות וול סטריט
     stocks = {
@@ -147,19 +147,19 @@ def build_market_text():
     if changes:
         rising = [c for c in changes if c[2] > 0]
         falling = [c for c in changes if c[2] < 0]
-        majority = "עוֹלוֹת" if len(rising) > len(falling) else "יוֹרְדוֹת"
-        trend_general = "נִרְשְׁמוּ עָלִיּוֹת חַדּוֹת" if sum(c[2] for c in changes)/len(changes) > 1 else f"נִרְשְׁמוּ {majority}"
+        majority = "עָלִיוֹת" if len(rising) > len(falling) else "יֵרִידוֹת"
+        trend_general = "נִרְשְׁמוּ עָלִיּוֹת חַדוֹת" if sum(c[2] for c in changes)/len(changes) > 1 else f"נִרְשְׁמוּ {majority}"
         lines.append(f"בְּווֹל סְטְרִיט {trend_general}:")
         group = rising if majority == "עוֹלוֹת" else falling
         for name, value, change in group:
             line = f"{name} {'עוֹלָה' if change > 0 else 'יוֹרֶדֶת'} בְּ{abs(change):.2f}%"
             if abs(change) > 1:
-                line += f" וְנִסְחֶרֶת כָּעֵת בֵּשוֹבִי שֶׁל {value:.0f} דּוֹלָר"
+                line += f" וְנִסְחֶרֶת כָּעֵת בֵּשוֹבִי שֶׁל {value:.0f} דוֹלָר"
             lines.append(line + ".")
         other_group = falling if majority == "עוֹלוֹת" else rising
         if other_group:
             name, value, change = other_group[0]
-            lines.append(f"וְכָל זֹאת בְּעוֹד {name} {'עוֹלָה' if change > 0 else 'יוֹרֶדֶת'} בְּ{abs(change):.2f}%.")
+            lines.append(f"וְקוֹל זֹאת בְּעוֹד {name} {'עוֹלָה' if change > 0 else 'יוֹרֶדֶת'} בְּ{abs(change):.2f}%.")
 
     # קריפטו
     btc = get_data("BTC-USD")
@@ -171,14 +171,14 @@ def build_market_text():
         crypto_trend = describe_trend(avg_change)
         lines.append(f"בְּגִזְרַת הַקְּרִיפְּטוֹ נִרְשָׁמוֹת {crypto_trend}:")
         lines.append(f"הַבִּיטְקוֹיְן נִסְחָר בְּשַׁעַר שֶׁל {btc[0]:,.0f} דּוֹלָר.")
-        lines.append(f"הָאֶתֶ'רְיוּם נִסְחָר בְּשַׁעַר שֶׁל {eth[0]:,.0f} דּוֹלָר.")
+        lines.append(f"הָאִתֶ'רְיוּם נִסְחָר בְּשַׁעַר שֶׁל {eth[0]:,.0f} דּוֹלָר.")
 
     # דולר
     usd = get_data("USDILS=X")
     if usd:
         curr, change, _, _ = usd
         trend = "מִתְחַזֵּק" if change > 0 else "נֶחְלָשׁ" if change < 0 else "שׁוֹמֵר עַל יַצִּיבוּת"
-        lines.append(f"הַדּוֹלָר {trend} מוּל הַשֶּׁקֶל וְנִסְחָר בְּשַׁעַר שֶׁל {curr:.2f} שְׁקָלִים.")
+        lines.append(f"הַדוֹלָר {trend} מוּל הַשֵׁקֶל וְנִסְחָר בְּשַׁעַר שֶׁל {curr:.2f} שְׁקָלִים.")
 
     return "\n".join(lines)
 
