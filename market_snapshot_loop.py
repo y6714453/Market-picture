@@ -10,14 +10,13 @@ import os
 import urllib.request
 import stat
 
-# 🟡 פרטי ימות המשיח
 USERNAME = "0733181201"
 PASSWORD = "6714453"
 TOKEN = f"{USERNAME}:{PASSWORD}"
 UPLOAD_PATH = "ivr2:/2/001.wav"
 FFMPEG_PATH = "./bin/ffmpeg"
 
-# ⬇️ הורדת ffmpeg אם לא קיים
+# הורדת ffmpeg אם לא קיים
 
 def ensure_ffmpeg():
     if not os.path.exists(FFMPEG_PATH):
@@ -33,145 +32,166 @@ def ensure_ffmpeg():
         os.chmod(FFMPEG_PATH, stat.S_IRWXU)
         print("✅ ffmpeg הותקן.")
 
-# 🧠 ברכה לפי שעה
+# קבלת ברכה ושעת היום בעברית
 
 def get_greeting():
-    hour = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=3))).hour
-    if 6 <= hour < 12:
-        return "בוקר טוב"
-    elif 12 <= hour < 18:
-        return "צהריים טובים"
+    hour = datetime.datetime.now().hour
+    if 6 <= hour < 10:
+        return "בַּבֹּקֶר"
+    elif 10 <= hour < 12:
+        return "לִפְנֵי הַצָּהֳרַיִם"
+    elif 12 <= hour < 14:
+        return "בַּצָּהֳרַיִם"
+    elif 14 <= hour < 18:
+        return "אַחַר הַצָּהֳרַיִם"
     elif 18 <= hour < 22:
-        return "ערב טוב"
+        return "בָּעֶרֶב"
     else:
-        return "לילה טוב"
+        return "בַּלַּיְלָה"
 
-# 🧠 פורמט שינוי אחוזי למילים
+# תיאור מגמה לפי אחוז שינוי
 
-def format_trend(change):
+def describe_trend(change):
     if change >= 1.5:
-        return "ממשיך לעלות דרמטית"
-    elif 0.5 <= change < 1.5:
-        return "ממשיך לעלות"
-    elif 0 < change < 0.5:
-        return "ממשיך לטפס"
-    elif -0.5 < change <= 0:
-        return "מרד קלות"
-    elif -1.5 < change <= -0.5:
-        return "ממשיך לירידה"
+        return "מְזַנֵּק"
+    elif change >= 0.5:
+        return "עוֹלֶה"
+    elif change > 0:
+        return "מִטְפֵּס"
+    elif change > -0.5:
+        return "יוֹרֵד קַלּוֹת"
+    elif change > -1.5:
+        return "יוֹרֵד"
     else:
-        return "ממשיך לירידה דרמטית"
+        return "צוֹנֵחַ"
 
-# 🧠 שליפת נתוני שוק
+# שליפת נתוני נייר ערך
 
-def get_index_info(ticker):
-    index = yf.Ticker(ticker)
-    data = index.history(period="5d")
-    if len(data) < 4:
-        return None, None, None, None
-    prev = data['Close'].iloc[-2]
-    curr = data['Close'].iloc[-1]
-    change = ((curr - prev) / prev) * 100
-    last3 = data['Close'].iloc[-3:]
-    trend_past = ""
-    if all(last3[i] < last3[i + 1] for i in range(2)):
-        if change > 1:
-            trend_past = "ממשיך לעלות בצורה גבוה"
-        else:
-            trend_past = "ממשיך לעלות"
-    elif all(last3[i] > last3[i + 1] for i in range(2)):
-        if abs(change) > 1:
-            trend_past = "ממשיך לירידה דרמטית"
-        else:
-            trend_past = "ממשיך לירידה"
-    else:
-        trend_past = format_trend(change)
-    near_high = abs((curr - max(data['Close'])) / max(data['Close'])) < 0.03
-    return curr, change, trend_past, near_high
+def get_data(ticker):
+    ticker_obj = yf.Ticker(ticker)
+    data = ticker_obj.history(period="5d")
+    if len(data) < 2:
+        return None
+    close = data['Close']
+    current = close.iloc[-1]
+    prev = close.iloc[-2]
+    change = ((current - prev) / prev) * 100
+    max_val = close.max()
+    rising_today = current >= prev
+    near_high = (abs(current - max_val) / max_val < 0.03 and change >= 0)
+    return current, change, rising_today, near_high
 
-# 🧠 בניית הטקסט
+# בניית טקסט תמונת שוק
 
 def build_market_text():
+    now = datetime.datetime.now()
     greeting = get_greeting()
-    now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=3))).strftime("%H:%M")
-    lines = [f"{greeting}, זוא תמונת השוק נכון לשעה {now}:"]
+    hour = now.hour % 12 or 12
+    minute = now.strftime('%M')
+    time_text = f"{hour} ו{minute} דַּקּוֹת"
+    lines = [f"הִנֵּה תְּמוּנַת הַשּׁוּק – נְכוֹן לְשָׁעָה {time_text} {greeting}:"]
 
     indices = {
-        "מדד תל אביב 125": "^TA125.TA",
-        "מדד האס אנד פי 500": "^GSPC",
-        "מדד הנאסדק": "^IXIC",
-        "דאו ג'ונס": "^DJI"
+        "מַדַּד תֵּל אָבִיב שְׁלוֹשִׁים וְחָמֵשׁ": "^TA35.TA",
+        "מַדַּד תֵּל אָבִיב מֵאָה וְעֶשְׂרִים וְחָמֵשׁ": "^TA125.TA",
+        "מַדַּד הָאַס אַנְד פִּי חֲמֵשׁ מֵאוֹת": "^GSPC",
+        "הַנָּאסְדָּ"ק": "^IXIC",
+        "דַּאוּ גּ'וֹנְס": "^DJI",
+        "מַדַּד הַפַּחַד": "^VIX",
+        "הַזָּהָב": "GC=F"
     }
 
-    lines.append("בישראל:")
-    name = "מדד תל אביב 125"
-    value, change, trend, near_high = get_index_info(indices[name])
-    if value:
-        line = f"{name} {trend} בשעור של {abs(change):.2f}‏% ועומד על {value:.0f} נקודות."
-        if near_high:
-            line += " ומתקרב לשיא."
-        lines.append(line)
-
-    lines.append("בעולם:")
-    for name, ticker in list(indices.items())[1:]:
-        value, change, trend, near_high = get_index_info(ticker)
-        if value:
-            line = f"{name} {trend} בשעור של {abs(change):.2f}‏% ועומד על {value:.0f} נקודות."
-            if near_high:
-                line += " ומתקרב לשיא."
-            lines.append(line)
-
-    # ✳️ קריפטו ודולר
-    usd = yf.Ticker("USDILS=X")
-    data = usd.history(period="2d")
-    if len(data) >= 2:
-        prev, curr = data['Close'].iloc[-2], data['Close'].iloc[-1]
-        if curr > prev:
-            trend = "מתחזק"
-        elif curr < prev:
-            trend = "נחלש"
+    for name, ticker in indices.items():
+        result = get_data(ticker)
+        if not result:
+            continue
+        value, change, rising, near_high = result
+        trend = describe_trend(change)
+        near_text = " וּמִתְקָרֵב לַשִּׂיא" if near_high and change >= 0 else ""
+        if name == "הַזָּהָב":
+            lines.append(f"{name} {trend} וְנִסְחָר בְּמְחִיר שֶׁל {value:.0f} דּוֹלָר לְאוּנְקִיָּה.")
         else:
-            trend = "שומר על יציבות"
-        lines.append(f"הדולר {trend} מול השקל ונסחר בשער של {curr:.2f} שקלים.")
+            lines.append(f"{name} {trend} בְּ{abs(change):.2f} אָחוּזִים{near_text}, וְעוֹמֵד עַכְשָׁו עַל {value:.0f} נְקֻדּוֹת.")
+
+    # מניות בולטות
+    stocks = {
+        "אַפֵּל": "AAPL",
+        "אַנְבִּידִיָּה": "NVDA",
+        "אַמָּזוֹן": "AMZN",
+        "טֶסְלָה": "TSLA",
+        "מַיְקְרוֹסוֹפְט": "MSFT",
+        "גוּגְל": "GOOG"
+    }
+    lines.append("עוֹד עַל מַנְיוֹת בּוֹלְטוֹת:")
+    for name, ticker in stocks.items():
+        result = get_data(ticker)
+        if not result:
+            continue
+        value, change, _, _ = result
+        trend = describe_trend(change)
+        if abs(change) >= 1:
+            lines.append(f"{name} {trend} בְּ{abs(change):.2f} אָחוּזִים, וְנִסְחֶרֶת עַכְשָׁו בְּשֶׁוְויִי שֶׁל {value:.2f} דּוֹלָר.")
+        else:
+            lines.append(f"{name} {trend} בְּ{abs(change):.2f} אָחוּזִים.")
+
+    # קריפטו
+    btc = get_data("BTC-USD")
+    eth = get_data("ETH-USD")
+    if btc and eth:
+        _, btc_change, _, _ = btc
+        _, eth_change, _, _ = eth
+        avg_change = (btc_change + eth_change) / 2
+        crypto_trend = describe_trend(avg_change)
+        lines.append(f"בִּגְזֶרֶת הַקְּרִיפְּטוֹ – נִרְשָׁמוֹת {crypto_trend}:")
+        lines.append(f"הַבִּיטְקוֹיְן נִסְחָר בִּשְׁעַר שֶׁל {btc[0]:,.0f} דּוֹלָר.")
+        lines.append(f"הָאֵתֶ'רְיוּם נִסְחָר בִּשְׁעַר שֶׁל {eth[0]:,.0f} דּוֹלָר.")
+
+    # דולר
+    usd = get_data("USDILS=X")
+    if usd:
+        curr, change, _, _ = usd
+        trend = "מִתְחַזֵּק" if change > 0 else "נֶחְלָשׁ" if change < 0 else "שׁוֹמֵר עַל יַצִּיבוּת"
+        lines.append(f"הַדּוֹלָר {trend} מוּל הַשֶּׁקֶל וְנִסְחָר בִּשְׁעַר שֶׁל {curr:.2f} שֶׁקֶל.")
 
     return "\n".join(lines)
 
-# 🎤 המרת MP3
+# המרת טקסט ל־MP3
 
 async def text_to_mp3(text, mp3_path):
-    print("🔄 ממיר טקסט לקובץ MP3...")
     communicate = Communicate(text, voice="he-IL-AvriNeural")
     await communicate.save(mp3_path)
-    print("✅ נוצר MP3:", mp3_path)
 
-# ♪ מי MP3 לפורמט WAV
+# המרת MP3 ל־WAV
 
 def convert_to_wav(mp3_path, wav_path):
-    subprocess.run([FFMPEG_PATH, "-y", "-i", mp3_path, "-ar", "8000", "-ac", "1", "-acodec", "pcm_s16le", wav_path])
+    subprocess.run([
+        FFMPEG_PATH, "-y", "-i", mp3_path,
+        "-ar", "8000", "-ac", "1", "-acodec", "pcm_s16le", wav_path
+    ])
 
-# ☁️ העלאה לימות
+# העלאה לימות
 
 def upload_to_yemot(wav_path):
-    print("☁️ מעלה לימות...")
     m = MultipartEncoder(fields={
         'token': TOKEN,
         'path': UPLOAD_PATH,
         'file': ('001.wav', open(wav_path, 'rb'), 'audio/wav')
     })
     r = requests.post("https://www.call2all.co.il/ym/api/UploadFile", data=m, headers={'Content-Type': m.content_type})
-    print("📱 תגובת השרת:", r.text)
+    print("📡 תגובת השרת:", r.text)
 
-# ▶️ לולאת הפעלה
+# לולאה
 
 async def loop():
     ensure_ffmpeg()
     while True:
         print("🎤 מייצר תמונת שוק...")
         text = build_market_text()
-        print("📄 נוסח:", text)
+        print("📄 טקסט תמונת שוק:\n", text)
         await text_to_mp3(text, "market.mp3")
         convert_to_wav("market.mp3", "market.wav")
         upload_to_yemot("market.wav")
+        print("✅ הסתיים! מְחַכֶּה לַדַּקָּה הַבָּאָה...\n")
         time.sleep(60)
 
 asyncio.run(loop())
