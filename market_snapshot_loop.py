@@ -16,8 +16,6 @@ TOKEN = f"{USERNAME}:{PASSWORD}"
 UPLOAD_PATH = "ivr2:/2/001.wav"
 FFMPEG_PATH = "./bin/ffmpeg"
 
-# הורדת ffmpeg אם לא קיים
-
 def ensure_ffmpeg():
     if not os.path.exists(FFMPEG_PATH):
         print("⬇️ מוריד ffmpeg...")
@@ -32,56 +30,47 @@ def ensure_ffmpeg():
         os.chmod(FFMPEG_PATH, stat.S_IRWXU)
         print("✅ ffmpeg הותקן.")
 
-# קבלת שעת ישראל לפי API
-
-def get_current_israel_time():
+def get_time_from_api():
     try:
-        response = requests.get("https://worldtimeapi.org/api/timezone/Asia/Jerusalem", timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            dt_str = data["datetime"]
-            dt = datetime.datetime.fromisoformat(dt_str[:-6])
-            return dt
-    except Exception as e:
-        print("⚠️ שגיאה בשליפת זמן מישראל:", e)
+        r = requests.get("https://worldtimeapi.org/api/timezone/Asia/Jerusalem", timeout=5)
+        if r.status_code == 200:
+            dt = r.json()["datetime"]
+            hour = int(dt[11:13])
+            minute = int(dt[14:16])
+            return hour, minute
+    except:
+        pass
+    now = datetime.datetime.now()
+    return now.hour, now.minute
 
-    # fallback
-    return datetime.datetime.now()
-
-# המרת שעה למחרוזת קריאה בעברית
-
-def format_hebrew_time(dt):
-    hour = dt.hour
-    minute = dt.minute
-
-    if hour >= 12:
-        suffix = "בָּעֶרֶב" if hour < 18 else "בַּלַּיְלָה"
+def get_greeting():
+    hour, _ = get_time_from_api()
+    if 6 <= hour < 10:
+        return "בַּבֹּקֶר"
+    elif 10 <= hour < 12:
+        return "לִפְנֵי הַצָּהֳרַיִם"
+    elif 12 <= hour < 14:
+        return "בַּצָּהֳרַיִם"
+    elif 14 <= hour < 18:
+        return "אַחַר הַצָּהֳרַיִם"
+    elif 18 <= hour < 22:
+        return "בָּעֶרֶב"
     else:
-        suffix = "בַּבּוֹקֶר"
-
-    hour_display = hour if hour <= 12 else hour - 12
-    hour_text = f"שעה {hour_display}"
-    if minute > 0:
-        hour_text += f" ו{minute} דַּקּוֹת"
-    return f"{hour_text} {suffix}"
-
-# תיאור מגמה לפי אחוז שינוי
+        return "בַּלָיְלָה"
 
 def describe_trend(change):
     if change >= 1.5:
-        return "עוֹלֶה בְּעוֹצְמָה"
+        return "עוֹלֶה בֵּעוֹצְמָה"
     elif change >= 0.5:
         return "מֵטָפֵּס"
     elif change > 0:
-        return "עוֹלֶה"
+        return "עוֹלֵה"
     elif change > -0.5:
-        return "יוֹרֵד קָלוֹת"
+        return "יוֹרֵד בְּקַלוּת"
     elif change > -1.5:
         return "יוֹרֵד"
     else:
         return "צוֹנֵחַ"
-
-# שליפת נתוני נייר ערך
 
 def get_data(ticker):
     ticker_obj = yf.Ticker(ticker)
@@ -97,21 +86,21 @@ def get_data(ticker):
     near_high = (abs(current - max_val) / max_val < 0.03 and change >= 0)
     return current, change, rising_today, near_high
 
-# בניית טקסט תמונת שוק
-
 def build_market_text():
-    dt = get_current_israel_time()
-    time_text = format_hebrew_time(dt)
-    lines = [f"הִנֵּה תְּמוּנַת הַשּׁוּק נָכוֹן לְ{time_text}:"]
+    hour, minute = get_time_from_api()
+    greeting = get_greeting()
+    hour_display = hour if hour <= 12 else hour - 12
+    time_text = f"{hour_display} ו{minute} דַּקּוֹת"
+    lines = [f"הִנֵּה תְמוּנַת הַשּׁוּק נָכוֹן לְשָׁעָה {time_text} {greeting}:"]
 
     indices = {
-        "מָדָד תֵל אָבִיב 125": "^TA125.TA",
-        "מָדָד תֵל אָבִיב 35": "TA35.TA",
-        "מָדָד הָאֵס אֵנְד פִּי 500": "^GSPC",
+        "מָדַד תֵל אָבִיב 35": "^TA35.TA",
+        "מָדַד תֵל אָבִיב 125": "^TA125.TA",
+        "מָדַד הָאֵס אֶנְד פִּי 500": "^GSPC",
         "הַנָאסְדָק": "^IXIC",
-        "הָדָאוֹ ג'וֹנְס": "^DJI",
-        "מָדָד הַפַּחַד": "^VIX",
-        "הָזָהָב": "GC=F"
+        "הָדָאוֹ גּ'וֹנְס": "^DJI",
+        "מָדַד הַפַּחַד": "^VIX",
+        "הַזָּהָב": "GC=F"
     }
 
     for name, ticker in indices.items():
@@ -120,29 +109,73 @@ def build_market_text():
             continue
         value, change, rising, near_high = result
         trend = describe_trend(change)
-        near_text = " וּמִתְקָרֵב לַשִׁיא" if near_high and rising else ""
-        if name == "הָזָהָב":
+        near_text = " וּמִתְקָרֵב לַשִׂיא" if near_high and rising else ""
+        if name == "הַזָהָב":
             lines.append(f"{name} {trend} וְנִסְחָר בְּמְחִיר שֶׁל {value:.0f} דוֹלָר לֵאוֹנְקִיָה.")
         else:
-            lines.append(f"{name} {trend} ב{abs(change):.2f} אָחוּזִים{near_text} וְעוֹמֵד עַל {value:.0f} נֵקוּדוֹת.")
+            lines.append(f"{name} {trend} בְּ{abs(change):.2f} אָחוּז{near_text} וְעוֹמֵד עַל {value:.0f} נֵקוּדוֹת.")
+
+    stocks = {
+        "אַפֶּל": "AAPL",
+        "אֵנְבִידְיָה": "NVDA",
+        "אַמָזוֹן": "AMZN",
+        "טֶסְלָה": "TSLA",
+        "מַיְקְרוֹסוֹפְט": "MSFT",
+        "גוּגֵל": "GOOG"
+    }
+    changes = []
+    for name, symbol in stocks.items():
+        result = get_data(symbol)
+        if not result:
+            continue
+        value, change, *_ = result
+        changes.append((name, value, change))
+
+    if changes:
+        rising = [c for c in changes if c[2] > 0]
+        falling = [c for c in changes if c[2] < 0]
+        majority = "עָלִיוֹת" if len(rising) > len(falling) else "יֵרִידוֹת"
+        trend_general = "נִרְשְׁמוּ עָלִיוֹת חַדוֹת" if sum(c[2] for c in changes)/len(changes) > 1 else f"נִרְשְׁמוּ {majority}"
+        lines.append(f"בְּווֹל סְטְרִיט {trend_general}:")
+        group = rising if majority == "עוֹלוֹת" else falling
+        for name, value, change in group:
+            line = f"{name} {'עוֹלָה' if change > 0 else 'יוֹרֶדֶת'} בְּ{abs(change):.2f}%"
+            if abs(change) > 1:
+                line += f" וְנִסְחֶרֶת כָּעֵת בֵּשוֹבִי שֶׁל {value:.0f} דוֹלָר"
+            lines.append(line + ".")
+        other_group = falling if majority == "עוֹלוֹת" else rising
+        if other_group:
+            name, value, change = other_group[0]
+            lines.append(f"וְקוֹל זֹאת בְּעוֹד {name} {'עוֹלָה' if change > 0 else 'יוֹרֶדֶת'} בְּ{abs(change):.2f}%.")
+
+    btc = get_data("BTC-USD")
+    eth = get_data("ETH-USD")
+    if btc and eth:
+        _, btc_change, _, _ = btc
+        _, eth_change, _, _ = eth
+        avg_change = (btc_change + eth_change) / 2
+        crypto_trend = describe_trend(avg_change)
+        lines.append(f"בְּגִזְרַת הַקְּרִיפְּטוֹ נִרְשָׁמוֹת {crypto_trend}:")
+        lines.append(f"הַבִּיטְקוֹיְן נִסְחָר בְּשַׁעַר שֶׁל {btc[0]:,.0f} דּוֹלָר.")
+        lines.append(f"הָאִתֶ'רְיוּם נִסְחָר בְּשַׁעַר שֶׁל {eth[0]:,.0f} דּוֹלָר.")
+
+    usd = get_data("USDILS=X")
+    if usd:
+        curr, change, _, _ = usd
+        trend = "מִתְחַזֵּק" if change > 0 else "נֶחְלָשׁ" if change < 0 else "שׁוֹמֵר עַל יַצִּיבוּת"
+        lines.append(f"הַדוֹלָר {trend} מוּל הַשֵׁקֶל וְנִסְחָר בְּשַׁעַר שֶׁל {curr:.2f} שְׁקָלִים.")
 
     return "\n".join(lines)
-
-# המרת טקסט לMP3
 
 async def text_to_mp3(text, mp3_path):
     communicate = Communicate(text, voice="he-IL-AvriNeural")
     await communicate.save(mp3_path)
-
-# המרת MP3 לWAV
 
 def convert_to_wav(mp3_path, wav_path):
     subprocess.run([
         FFMPEG_PATH, "-y", "-i", mp3_path,
         "-ar", "8000", "-ac", "1", "-acodec", "pcm_s16le", wav_path
     ])
-
-# העלאה לימות
 
 def upload_to_yemot(wav_path):
     m = MultipartEncoder(fields={
@@ -151,20 +184,18 @@ def upload_to_yemot(wav_path):
         'file': ('001.wav', open(wav_path, 'rb'), 'audio/wav')
     })
     r = requests.post("https://www.call2all.co.il/ym/api/UploadFile", data=m, headers={'Content-Type': m.content_type})
-    print("📡 תְּגוּבַת הַשָּׁרָת:", r.text)
-
-# לולאה
+    print("📡 תגובת השרת:", r.text)
 
 async def loop():
     ensure_ffmpeg()
     while True:
-        print("🎤 מְיַצֵּר תְּמוּנַת שׁוּק...")
+        print("🎤 מייצר תמונת שוק...")
         text = build_market_text()
-        print("📄 טֶקְסְט תְּמוּנַת שׁוּק:\n", text)
+        print("📄 טקסט תמונת שוק:\n", text)
         await text_to_mp3(text, "market.mp3")
         convert_to_wav("market.mp3", "market.wav")
         upload_to_yemot("market.wav")
-        print("✅ הִסְתַּיֵּם! מְמַתִּין לַדַּקָּה הַבָּאָה...\n")
+        print("✅ הסתיים! ממתין לדקה הבאה...\n")
         time.sleep(60)
 
 asyncio.run(loop())
