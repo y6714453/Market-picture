@@ -37,33 +37,33 @@ def ensure_ffmpeg():
 def get_greeting():
     hour = datetime.datetime.now().hour
     if 6 <= hour < 10:
-        return "בַּבֹּקֶר"
+        return "בבוקר"
     elif 10 <= hour < 12:
-        return "לִפְנֵי הַצָּהֳרַיִם"
+        return "לפני הצהריים"
     elif 12 <= hour < 14:
-        return "בַּצָּהֳרַיִם"
+        return "בצהריים"
     elif 14 <= hour < 18:
-        return "אַחַר הַצָּהֳרַיִם"
+        return "אחר הצהריים"
     elif 18 <= hour < 22:
-        return "בָּעֶרֶב"
+        return "בערב"
     else:
-        return "בַּלַּיְלָה"
+        return "בלילה"
 
 # תיאור מגמה לפי אחוז שינוי
 
 def describe_trend(change):
     if change >= 1.5:
-        return "עוֹלֶה בֵּעוֹצְמָה"
+        return "עולה בעוצמה"
     elif change >= 0.5:
-        return "מֵטָפֵס"
+        return "מטפס"
     elif change > 0:
-        return "עוֹלֵה"
+        return "עולה"
     elif change > -0.5:
-        return "יוֹרֵד בְּקַלּוּת"
+        return "יורד בקלות"
     elif change > -1.5:
-        return "יוֹרֵד"
+        return "יורד"
     else:
-        return "צוֹנֵחַ"
+        return "צונח"
 
 # שליפת נתוני נייר ערך
 
@@ -81,19 +81,6 @@ def get_data(ticker):
     near_high = (abs(current - max_val) / max_val < 0.03 and change >= 0)
     return current, change, rising_today, near_high
 
-# בדיקת האם המסחר פתוח
-
-def is_market_open():
-    now = datetime.datetime.now()
-    hour = now.hour
-    minute = now.minute
-    weekday = now.weekday()
-    if weekday >= 5:
-        return False
-    if 16 <= hour < 23 or (hour == 23 and minute == 0):
-        return True
-    return False
-
 # בניית טקסט תמונת שוק
 
 def build_market_text():
@@ -102,17 +89,20 @@ def build_market_text():
     hour = now.hour
     minute = now.minute
     hour_display = hour if hour <= 12 else hour - 12
-    time_text = f"{hour_display} ו{minute} דַּקּוֹת"
-    lines = [f"הִנֵּה תְּמוּנַת הַשּׁוּק נָכוֹן לְשָׁעָה {time_text} {greeting}:"]
+    if minute == 0:
+        time_text = f"{hour_display}"
+    else:
+        time_text = f"{hour_display} ו{minute} דקות"
+    lines = [f"הנה תמונת השוק נכון לשעה {time_text} {greeting}:"]
 
     indices = {
-        "מָדַד תֵּל אָבִיב 35": "^TA35.TA",
-        "מָדַד תֵּל אָבִיב 125": "^TA125.TA",
-        "מָדַד הָאָס אֶנְד פִּי 500": "^GSPC",
-        "הַנָּאסְדָּק": "^IXIC",
-        "דָּאוֹ גּ'וֹנְס": "^DJI",
-        "מָדַד הַפַּחַד": "^VIX",
-        "הַזָּהָב": "GC=F"
+        "מדד תל אביב 35": "^TA35.TA",
+        "מדד תל אביב 125": "^TA125.TA",
+        "מדד האס אנד פי 500": "^GSPC",
+        "הנאסדק": "^IXIC",
+        "דאו ג'ונס": "^DJI",
+        "מדד הפחד": "^VIX",
+        "הזהב": "GC=F"
     }
 
     for name, ticker in indices.items():
@@ -121,64 +111,11 @@ def build_market_text():
             continue
         value, change, rising, near_high = result
         trend = describe_trend(change)
-        near_text = " וּמִתְקָרֵב לַשִׂיא" if near_high and rising else ""
-        if name == "הַזָהָב":
-            lines.append(f"{name} {trend} וְנִסְחָר בְּמְחִיר שֶׁל {value:.0f} דוֹלָר לֵאוֹנְקִיָה.")
+        near_text = " ומתקרב לשיא" if near_high and rising else ""
+        if name == "הזהב":
+            lines.append(f"{name} {trend} ונסחר במחיר של {value:.0f} דולר לאונקיה.")
         else:
-            lines.append(f"{name} {trend} בְּ{abs(change):.2f} אָחוּז{near_text} וְעוֹמֵד עַל {value:.0f} נְקֻדוֹת.")
-
-    # מניות וול סטריט
-    stocks = {
-        "אַפֶּל": "AAPL",
-        "אֵנְבִידְיָה": "NVDA",
-        "אַמָּזוֹן": "AMZN",
-        "טֶסְלָה": "TSLA",
-        "מַיְקְרוֹסוֹפְט": "MSFT",
-        "גוּגֵל": "GOOG"
-    }
-    changes = []
-    for name, symbol in stocks.items():
-        result = get_data(symbol)
-        if not result:
-            continue
-        value, change, *_ = result
-        changes.append((name, value, change))
-
-    if changes:
-        rising = [c for c in changes if c[2] > 0]
-        falling = [c for c in changes if c[2] < 0]
-        majority = "עָלִיוֹת" if len(rising) > len(falling) else "יֵרִידוֹת"
-        trend_general = "נִרְשְׁמוּ עָלִיּוֹת חַדוֹת" if sum(c[2] for c in changes)/len(changes) > 1 else f"נִרְשְׁמוּ {majority}"
-        lines.append(f"בְּווֹל סְטְרִיט {trend_general}:")
-        group = rising if majority == "עוֹלוֹת" else falling
-        for name, value, change in group:
-            line = f"{name} {'עוֹלָה' if change > 0 else 'יוֹרֶדֶת'} בְּ{abs(change):.2f}%"
-            if abs(change) > 1:
-                line += f" וְנִסְחֶרֶת כָּעֵת בֵּשוֹבִי שֶׁל {value:.0f} דוֹלָר"
-            lines.append(line + ".")
-        other_group = falling if majority == "עוֹלוֹת" else rising
-        if other_group:
-            name, value, change = other_group[0]
-            lines.append(f"וְקוֹל זֹאת בְּעוֹד {name} {'עוֹלָה' if change > 0 else 'יוֹרֶדֶת'} בְּ{abs(change):.2f}%.")
-
-    # קריפטו
-    btc = get_data("BTC-USD")
-    eth = get_data("ETH-USD")
-    if btc and eth:
-        _, btc_change, _, _ = btc
-        _, eth_change, _, _ = eth
-        avg_change = (btc_change + eth_change) / 2
-        crypto_trend = describe_trend(avg_change)
-        lines.append(f"בְּגִזְרַת הַקְּרִיפְּטוֹ נִרְשָׁמוֹת {crypto_trend}:")
-        lines.append(f"הַבִּיטְקוֹיְן נִסְחָר בְּשַׁעַר שֶׁל {btc[0]:,.0f} דּוֹלָר.")
-        lines.append(f"הָאִתֶ'רְיוּם נִסְחָר בְּשַׁעַר שֶׁל {eth[0]:,.0f} דּוֹלָר.")
-
-    # דולר
-    usd = get_data("USDILS=X")
-    if usd:
-        curr, change, _, _ = usd
-        trend = "מִתְחַזֵּק" if change > 0 else "נֶחְלָשׁ" if change < 0 else "שׁוֹמֵר עַל יַצִּיבוּת"
-        lines.append(f"הַדוֹלָר {trend} מוּל הַשֵׁקֶל וְנִסְחָר בְּשַׁעַר שֶׁל {curr:.2f} שְׁקָלִים.")
+            lines.append(f"{name} {trend} ב־{abs(change):.2f} אחוזים{near_text} ועומד על {value:.0f} נקודות.")
 
     return "\n".join(lines)
 
