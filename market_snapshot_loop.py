@@ -43,8 +43,7 @@ def get_time_from_api():
     now = datetime.datetime.now()
     return now.hour, now.minute
 
-def get_greeting():
-    hour, _ = get_time_from_api()
+def get_greeting(hour):
     if 6 <= hour < 10:
         return "בַּבֹּקֶר"
     elif 10 <= hour < 12:
@@ -56,17 +55,17 @@ def get_greeting():
     elif 18 <= hour < 22:
         return "בָּעֶרֶב"
     else:
-        return "בַּלָיְלָה"
+        return "בַּלַּיְלָה"
 
 def describe_trend(change):
     if change >= 1.5:
         return "עוֹלֶה בֵּעוֹצְמָה"
     elif change >= 0.5:
-        return "מֵטָפֵּס"
+        return "מֵטָפֵס"
     elif change > 0:
         return "עוֹלֵה"
     elif change > -0.5:
-        return "יוֹרֵד בְּקַלוּת"
+        return "יוֹרֵד בְּקַלּוּת"
     elif change > -1.5:
         return "יוֹרֵד"
     else:
@@ -88,17 +87,17 @@ def get_data(ticker):
 
 def build_market_text():
     hour, minute = get_time_from_api()
-    greeting = get_greeting()
+    greeting = get_greeting(hour)
     hour_display = hour if hour <= 12 else hour - 12
     time_text = f"{hour_display} ו{minute} דַּקּוֹת"
     lines = [f"הִנֵּה תְמוּנַת הַשּׁוּק נָכוֹן לְשָׁעָה {time_text} {greeting}:"]
 
     indices = {
-        "מָדַד תֵל אָבִיב 35": "^TA35.TA",
-        "מָדַד תֵל אָבִיב 125": "^TA125.TA",
+        "מָדַד תֵּל אָבִיב 35": "^TA35.TA",
+        "מָדַד תֵּל אָבִיב 125": "^TA125.TA",
         "מָדַד הָאֵס אֶנְד פִּי 500": "^GSPC",
         "הַנָאסְדָק": "^IXIC",
-        "הָדָאוֹ גּ'וֹנְס": "^DJI",
+        "דָאוֹ גּ'וֹנְס": "^DJI",
         "מָדַד הַפַּחַד": "^VIX",
         "הַזָּהָב": "GC=F"
     }
@@ -113,12 +112,12 @@ def build_market_text():
         if name == "הַזָהָב":
             lines.append(f"{name} {trend} וְנִסְחָר בְּמְחִיר שֶׁל {value:.0f} דוֹלָר לֵאוֹנְקִיָה.")
         else:
-            lines.append(f"{name} {trend} בְּ{abs(change):.2f} אָחוּז{near_text} וְעוֹמֵד עַל {value:.0f} נֵקוּדוֹת.")
+            lines.append(f"{name} {trend} בְּ{abs(change):.2f} אָחוּז{near_text} וְעוֹמֵד עַל {value:.0f} נְקֻדוֹת.")
 
     stocks = {
         "אַפֶּל": "AAPL",
         "אֵנְבִידְיָה": "NVDA",
-        "אַמָזוֹן": "AMZN",
+        "אַמָּזוֹן": "AMZN",
         "טֶסְלָה": "TSLA",
         "מַיְקְרוֹסוֹפְט": "MSFT",
         "גוּגֵל": "GOOG"
@@ -135,7 +134,7 @@ def build_market_text():
         rising = [c for c in changes if c[2] > 0]
         falling = [c for c in changes if c[2] < 0]
         majority = "עָלִיוֹת" if len(rising) > len(falling) else "יֵרִידוֹת"
-        trend_general = "נִרְשְׁמוּ עָלִיוֹת חַדוֹת" if sum(c[2] for c in changes)/len(changes) > 1 else f"נִרְשְׁמוּ {majority}"
+        trend_general = "נִרְשְׁמוּ עָלִיּוֹת חַדוֹת" if sum(c[2] for c in changes)/len(changes) > 1 else f"נִרְשְׁמוּ {majority}"
         lines.append(f"בְּווֹל סְטְרִיט {trend_general}:")
         group = rising if majority == "עוֹלוֹת" else falling
         for name, value, change in group:
