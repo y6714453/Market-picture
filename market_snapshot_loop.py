@@ -13,6 +13,9 @@ PASSWORD = "6714453"
 TOKEN = f"{USERNAME}:{PASSWORD}"
 UPLOAD_PATH = "ivr2:/2/001.wav"  # ← שלוחה 2 בתפריט הראשי
 
+# 🔧 נתיב ל־ffmpeg בתיקיית bin
+FFMPEG_PATH = "./bin/ffmpeg"
+
 # 🧠 ברכה לפי שעה
 def get_greeting():
     hour = datetime.datetime.now().hour
@@ -64,7 +67,7 @@ def build_market_text():
         "דאו ג׳ונס": "^DJI"
     }
 
-    lines = [f"{greeting}! הנה תמונת השוק נכון לשעה {now}:\n"]
+    lines = [f"{greeting}! הנה תמונת השוק נכון לשעה {now}:"]
 
     for name, ticker in indices.items():
         value, change, trend = get_index_info(ticker)
@@ -72,6 +75,16 @@ def build_market_text():
             lines.append(f"מדד {name} {trend} ב־{abs(change):.2f} אחוזים, ועומד על {value:.0f} נקודות.")
         else:
             lines.append(f"לא ניתן למשוך נתונים עבור מדד {name}.")
+
+    # ✴️ תוספת – מידע על הדולר מול השקל
+    usd_ils = yf.Ticker("USDILS=X")
+    data = usd_ils.history(period="2d")
+    if len(data) >= 2:
+        prev = data['Close'].iloc[-2]
+        curr = data['Close'].iloc[-1]
+        diff = curr - prev
+        trend = "מתחזק" if diff > 0 else "נחלש" if diff < 0 else "שומר על יציבות"
+        lines.append(f"בגזרת המטבעות – הדולר {trend} מול השקל ונסחר בשער של {curr:.2f} שקלים.")
 
     return "\n".join(lines)
 
@@ -86,7 +99,7 @@ async def text_to_mp3(text, mp3_path):
 def convert_to_wav(mp3_path, wav_path):
     print("🎛️ ממיר ל-WAV בפורמט ימות...")
     subprocess.run([
-        "ffmpeg", "-y", "-i", mp3_path,
+        FFMPEG_PATH, "-y", "-i", mp3_path,
         "-ar", "8000", "-ac", "1", "-acodec", "pcm_s16le", wav_path
     ])
     print("✅ נוצר קובץ WAV:", wav_path)
