@@ -1,100 +1,151 @@
 import asyncio
-import os
 import datetime
 import pytz
-import yfinance as yf
-import edge_tts
-import subprocess
-from requests_toolbelt.multipart.encoder import MultipartEncoder
 import requests
+import yfinance as yf
+from edge_tts import Communicate
+import subprocess
 
-# פרטי הגישה למערכת ימות המשיח
 USERNAME = "0733181201"
 PASSWORD = "6714453"
 TOKEN = f"{USERNAME}:{PASSWORD}"
-UPLOAD_URL = "https://www.call2all.co.il/ym/api/UploadFile"
+
+OUTPUT_MP3 = "market.mp3"
+OUTPUT_WAV = "market.wav"
 UPLOAD_PATH = "ivr2:/2/market.wav"
 
-# המרות מספרים
-def מספר_לטקסט(num):
-    return str(num).replace('.', ' נְקוּדָה ')
+TICKERS = {
+    "מדד תל אביב 125": "^TA125.TA",
+    "מדד תל אביב 35": "^TA35.TA",
+    "מדד אס אנד פי חמש מאות": "^GSPC",
+    "הנאסדאק": "^IXIC",
+    "דאו ג'ונס": "^DJI"
+}
 
-# המרת שעה
-def שעה_לטקסט():
-    tz = pytz.timezone('Asia/Jerusalem')
-    now = datetime.datetime.now(tz)
-    return now.strftime("%H נְקוּדָה %M")
+CRYPTO = {
+    "הביטקוין": "BTC-USD",
+    "האתריום": "ETH-USD"
+}
 
-# יצירת טקסט תמונת שוק
-async def צור_טקסט():
-    טקסט = f"לַיְלָה טוֹב, זוֹ תְּמוּנַת הַשּׁוּק נָכוֹן לְשָׁעָה {שעה_לטקסט()}:\n\n"
+USD_ILS = "USDILS=X"
 
-    # מדדים ישראליים
-    טקסט += "בְּיִשְׂרָאֵל:\n"
-    ta125 = yf.Ticker("TA125.TA").history(period="5d")
-    ta35 = yf.Ticker("TA35.TA").history(period="5d")
+async def convert_to_wav(input_file, output_file):
+    subprocess.run([
+        "ffmpeg", "-y", "-i", input_file,
+        "-ar", "8000", "-ac", "1", "-acodec", "pcm_s16le",
+        output_file
+    ])
 
-    for שם, מדד in [("תֵּל אָבִיב מֵאָה עֶשְׂרִים וְחָמֵשׁ", ta125), ("תֵּל אָבִיב שְׁלוֹשִׁים וְחָמֵשׁ", ta35)]:
-        if len(מדד) >= 2:
-            שינוי = round((מדד['Close'][-1] - מדד['Close'][-2]) / מדד['Close'][-2] * 100, 2)
-            ערך = round(מדד['Close'][-1])
-            מגמה = "עוֹלֶה" if שינוי > 0 else "יוֹרֵד" if שינוי < 0 else "לְלֹא שִׁינּוּי"
-            טקסט += f"מָדָד {שם} {מגמה} בְּשִׁעּוּר שֶׁל {מספר_לטקסט(abs(שינוי))} אָחוּז, וְעוֹמֵד עַל {מספר_לטקסט(ערך)} נְקוּדוֹת.\n"
 
-    # מדדים אמריקאיים
-    טקסט += "\nבָּעוֹלָם:\n"
-    for סמל, שם_מדד in [("^GSPC", "הָאַס אֶנְד פִּי"), ("^IXIC", "הַנָּאסְדָּק"), ("^DJI", "דָּאוּ ג'וֹנְס")]:
-        מדד = yf.Ticker(סמל).history(period="5d")
-        if len(מדד) >= 2:
-            שינוי = round((מדד['Close'][-1] - מדד['Close'][-2]) / מדד['Close'][-2] * 100, 2)
-            ערך = round(מדד['Close'][-1])
-            מגמה = "עוֹלֶה" if שינוי > 0 else "יוֹרֵד" if שינוי < 0 else "לְלֹא שִׁינּוּי"
-            טקסט += f"מָדָד {שם_מדד} {מגמה} בְּשִׁעּוּר שֶׁל {מספר_לטקסט(abs(שינוי))} אָחוּז, וְעוֹמֵד עַל {מספר_לטקסט(ערך)} נְקוּדוֹת.\n"
+def get_heb_time():
+    now = datetime.datetime.now(pytz.timezone('Asia/Jerusalem'))
+    hour = now.hour
+    minute = now.minute
+    if minute == 0:
+        minute_str = "בדיוק"
+    else:
+        minute_str = f"וְ{num_to_words(minute)} דַּקּוֹת"
 
-    # מטבעות קריפטו
-    טקסט += "\nבְּגִזְרַת הַקְּרִיפְּטוֹ:\n"
-    for סמל, שם in [("BTC-USD", "הַבִּיטְקוֹיְן"), ("ETH-USD", "הָאִתֶרִיוּם")]:
-        מטבע = yf.Ticker(סמל).history(period="1d")
-        if not מטבע.empty:
-            ערך = round(מטבע['Close'][-1])
-            טקסט += f"{שם} נִסְחָר בְּשַׁעַר שֶׁל {מספר_לטקסט(ערך)} דּוֹלָר.\n"
+    if 6 <= hour < 12:
+        greeting = "בֹּקֶר טוֹב"
+    elif 12 <= hour < 18:
+        greeting = "צָהֳרַיִם טוֹבִים"
+    elif 18 <= hour < 21:
+        greeting = "עֶרֶב טוֹב"
+    else:
+        greeting = "לַיְלָה טוֹב"
 
-    # דולר לשקל
-    דולר = yf.Ticker("USDILS=X").history(period="1d")
-    if not דולר.empty:
-        שער = round(דולר['Close'][-1], 2)
-        שינוי = שער - דולר['Close'][0]
-        מגמה = "מִתְחַזֵּק" if שינוי > 0 else "נֶחְלָשׁ"
-        טקסט += f"\nהַדּוֹלָר {מגמה} מוּל הַשֶּׁקֶל וְנִסְחָר בְּשַׁעַר שֶׁל {מספר_לטקסט(שער)} שְׁקָלִים."
+    return greeting, f"נָכוֹן לְשָׁעָה {num_to_words(hour)} {minute_str}"
 
-    return טקסט
 
-# שמירת קובץ קול
-async def שמור_קובץ(text):
-    tts = edge_tts.Communicate(text, voice="he-IL-AvriNeural")
-    await tts.save("market.mp3")
-    subprocess.run(["ffmpeg", "-y", "-i", "market.mp3", "-ar", "8000", "-ac", "1", "-acodec", "pcm_s16le", "market.wav"])
+def num_to_words(num):
+    import inflect
+    p = inflect.engine()
+    hebrew_map = {
+        "zero": "אֶפֶס", "one": "אֶחָד", "two": "שְׁנַיִם", "three": "שָׁלוֹשׁ", "four": "אַרְבַּע",
+        "five": "חָמֵשׁ", "six": "שֵׁשׁ", "seven": "שֶׁבַע", "eight": "שְׁמוֹנֶה", "nine": "תֵּשַׁע",
+        "ten": "עֶשֶׂר", "eleven": "אַחַת עֶשְׂרֵה", "twelve": "שְׁתֵּים עֶשְׂרֵה", "thirteen": "שְׁלוֹשׁ עֶשְׂרֵה",
+        "fourteen": "אַרְבַּע עֶשְׂרֵה", "fifteen": "חֲמֵשׁ עֶשְׂרֵה", "sixteen": "שֵׁשׁ עֶשְׂרֵה",
+        "seventeen": "שְׁבַע עֶשְׂרֵה", "eighteen": "שְׁמוֹנֶה עֶשְׂרֵה", "nineteen": "תֵּשַׁע עֶשְׂרֵה",
+        "twenty": "עֶשְׂרִים", "thirty": "שְׁלוֹשִׁים", "forty": "אַרְבָּעִים", "fifty": "חֲמִשִּׁים"
+    }
+    eng = p.number_to_words(num, andword="")
+    return " ".join(hebrew_map.get(word, word) for word in eng.split())
 
-# העלאה לימות
-def העלה_לימות():
-    print("📤 מעלה קובץ לימות המשיח לשלוחה 2...")
-    with open("market.wav", 'rb') as f:
-        m = MultipartEncoder(fields={
-            'token': TOKEN,
-            'path': UPLOAD_PATH,
-            'file': ('market.wav', f, 'audio/wav')
-        })
-        r = requests.post(UPLOAD_URL, data=m, headers={'Content-Type': m.content_type})
-        print("✅ הועלה לימות המשיח:", r.text)
 
-# הרצת הכל
-async def main():
-    print("🎤 מייצר תמונת שוק...")
-    טקסט = await צור_טקסט()
-    print("📄 טקסט תמונת שוק:\n\n" + טקסט + "\n")
-    print("🔄 ממיר טקסט ל-MP3...")
-    await שמור_קובץ(טקסט)
-    העלה_לימות()
+def get_price(ticker):
+    try:
+        df = yf.Ticker(ticker).history(period="5d")
+        if len(df) < 2:
+            return None, None, None
+        prev_close = df["Close"].iloc[-2]
+        current = df["Close"].iloc[-1]
+        change = ((current - prev_close) / prev_close) * 100
+        return round(current), round(change, 2), df
+    except Exception:
+        return None, None, None
+
+
+def generate_market_text():
+    greeting, time_phrase = get_heb_time()
+    lines = [f"{greeting}, זוֹ תְּמוּנַת הַשּׁוּק {time_phrase}:", "\n", "בְּיִישְׂרָאֵל:"]
+
+    for name, ticker in TICKERS.items():
+        price, change, df = get_price(ticker)
+        if price is None:
+            continue
+        trend = "עוֹלֶה" if change > 0 else "יוֹרֵד"
+        change_str = f"{trend} בְּשִׁעּוּר שֶׁל {str(abs(change)).replace('.', ' נְקוּדָה ')} אָחוּז"
+        price_str = f"וְעוֹמֵד עַל {price} נְקוּדוֹת"
+        lines.append(f"{name} {change_str}, {price_str}.")
+
+    lines.append("\nבָּעוֹלָם:")
+
+    for name, ticker in list(TICKERS.items())[2:]:
+        price, change, df = get_price(ticker)
+        if price is None:
+            continue
+        trend = "עוֹלֶה" if change > 0 else "יוֹרֵד"
+        change_str = f"{trend} בְּשִׁעּוּר שֶׁל {str(abs(change)).replace('.', ' נְקוּדָה ')} אָחוּז"
+        price_str = f"וְעוֹמֵד עַל {price} נְקוּדוֹת"
+        lines.append(f"{name} {change_str}, {price_str}.")
+
+    lines.append("\nבְּגִזְרַת הַקְּרִיפְּטוֹ:")
+    for name, ticker in CRYPTO.items():
+        price, change, _ = get_price(ticker)
+        if price is not None:
+            lines.append(f"{name} נִסְחָר בְּשַׁעַר שֶׁל {price} דּוֹלָר.")
+
+    usd_price, _, _ = get_price(USD_ILS)
+    if usd_price:
+        trend = "מִתְחַזֵּק" if _ > 0 else "נֶחְלָשׁ"
+        lines.append(f"הַדּוֹלָר {trend} מוּל הַשֶּׁקֶל וְנִסְחָר בְּשַׁעַר שֶׁל {str(usd_price).replace('.', ' נְקוּדָה ')} שֶׁקֶל.")
+
+    return "\n".join(lines)
+
+
+async def loop():
+    while True:
+        print("🎤 מייצר תמונת שוק...")
+        text = generate_market_text()
+        print(f"\n📄 טקסט תמונת שוק:\n\n{text}\n")
+
+        communicate = Communicate(text=text, voice="he-IL-AvriNeural")
+        await communicate.save(OUTPUT_MP3)
+        print(f"✅ נוצר קובץ MP3: {OUTPUT_MP3}")
+
+        await convert_to_wav(OUTPUT_MP3, OUTPUT_WAV)
+        print(f"🎛️ ממיר ל-WAV בפורמט ימות...")
+
+        with open(OUTPUT_WAV, 'rb') as f:
+            response = requests.post(
+                'https://www.call2all.co.il/ym/api/UploadFile',
+                files={'file': ("market.wav", f, 'audio/wav')},
+                data={'token': TOKEN, 'path': UPLOAD_PATH}
+            )
+            print(f"⬆️ מעלה לשלוחה: {UPLOAD_PATH} – תוצאה: {response.status_code}, {response.text}")
+
+        await asyncio.sleep(60)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(loop())
